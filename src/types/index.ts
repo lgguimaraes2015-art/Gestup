@@ -1,0 +1,372 @@
+export type Departamento = 'Fiscal' | 'Contábil' | 'Pessoal' | 'Pessoal/RH' | 'Financeiro' | 'Administrativo' | 'Outros' | 'Societário' | 'Geral';
+export type StatusTarefa = 'Pendente' | 'Em Andamento' | 'Concluída' | 'Atrasada' | 'Pausada';
+export type Prioridade = 'Baixa' | 'Normal' | 'Alta' | 'Urgente';
+export type RegimeTributario = 'Simples Nacional' | 'Lucro Presumido' | 'Lucro Real' | 'MEI' | 'Isento';
+
+export interface GuiaPagamentoTarefa {
+  arquivo_nome: string;
+  arquivo_url: string;
+  data_vencimento: string;
+  valor?: number;
+  enviado_email: boolean;
+  enviado_whatsapp: boolean;
+  email_destinatario?: string;
+  telefone_destinatario?: string;
+  data_envio: string;
+}
+
+export interface ComentarioItem {
+  id: string;
+  autor: string;
+  data: string;
+  texto: string;
+}
+
+export interface ContatoNotificacao {
+  id: string;
+  nome: string;
+  telefoneOuGrupo: string;
+  tipo: 'Individual' | 'Grupo';
+  principal: boolean;
+}
+
+export interface DeclaracaoVinculadaCliente {
+  declaracao_id: string;
+  titulo: string;
+  periodicidade: 'Mensal' | 'Trimestral' | 'Anual' | 'Eventual';
+  data_inicio: string;
+  dia_vencimento: number;
+}
+
+export interface HistoricoClienteItem {
+  id: string;
+  data: string;
+  autor: string;
+  tipo: 'Cadastro' | 'Edição' | 'Status' | 'Contrato' | 'Declaração' | 'WhatsApp';
+  descricao: string;
+}
+
+export interface Cliente {
+  id: string;
+  nome: string;
+  cnpj_cpf: string;
+  email: string;
+  telefone: string;
+  whatsapp?: string;
+  receber_guias_whatsapp?: boolean; // Se flegado, guias anexadas são enviadas automaticamente por WhatsApp
+  contatos_notificacao?: ContatoNotificacao[]; // Múltiplos contatos (individuais ou grupos)
+  regime_tributario: RegimeTributario;
+  status: 'Ativo' | 'Inativo' | 'Suspenso';
+  responsavel: string;
+  honorario_mensal: number;
+  dia_vencimento: number;
+  endereco: string;
+  observacoes?: string;
+  data_inicio_contrato?: string;
+  data_renovacao_contrato?: string;
+  data_contrato?: string;
+  validade_contrato?: string;
+  particularidades_contrato?: string;
+  contrato_assinado?: boolean;
+  declaracoes_vinculadas?: DeclaracaoVinculadaCliente[];
+  historico_alteracoes?: HistoricoClienteItem[];
+  created_at: string;
+}
+
+export interface Colaborador {
+  id: string;
+  nome: string;
+  email: string;
+  cargo: string;
+  departamento: Departamento;
+  status: 'Ativo' | 'Inativo';
+  telefone: string;
+  whatsapp?: string;
+  data_admissao: string;
+}
+
+export interface Tarefa {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  tipo: 'Recorrente' | 'Avulsa' | 'Automática';
+  status: StatusTarefa;
+  prioridade: Prioridade;
+  cliente_id: string;
+  cliente_nome: string;
+  responsavel: string;
+  responsavel_id?: string;
+  data_prazo_legal: string; // Data final da obrigação (Risco de Multa)
+  data_prazo_meta: string;  // Prazo interno da equipe
+  categoria: Departamento;
+  competencia: string; // Ex: "10/2026", "09/2026"
+  tempo_gasto_minutos: number;
+  observacoes?: string;
+  motivo_atraso?: string;
+  recorrencia_tipo?: 'Mensal' | 'Trimestral' | 'Anual' | 'Única';
+  declaracao_id?: string;
+  processo_id?: string;
+  data_conclusao?: string;
+  prorrogacoes_count?: number;
+  eh_pagamento?: boolean;
+  guia_pagamento?: GuiaPagamentoTarefa;
+  comentarios_lista?: ComentarioItem[];
+  created_at: string;
+}
+
+export interface TarefaComentario {
+  id: string;
+  tarefa_id: string;
+  tipo: 'Comentário' | 'Prorrogação' | 'Auditoria' | 'WhatsApp';
+  texto: string;
+  autor: string;
+  novo_prazo?: string;
+  prazo_anterior?: string;
+  created_at: string;
+}
+
+export interface Processo {
+  id: string;
+  tarefa_id?: string;
+  tarefa_titulo?: string;
+  cliente_id: string;
+  cliente_nome: string;
+  nome: string;
+  status: 'Ativo' | 'Pendente' | 'Concluído' | 'Pausado';
+  progresso: number; // 0 - 100
+  motivo_pausa?: string;
+  created_at: string;
+}
+
+export interface SubtarefaProcesso {
+  id: string;
+  processo_id: string;
+  titulo: string;
+  concluida: boolean;
+  ordem: number;
+  responsavel?: string;
+}
+
+export type Periodicidade = 'Mensal' | 'Anual' | 'Trimestral' | 'Eventual';
+
+export interface Declaracao {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  categoria: Departamento;
+  periodicidade: Periodicidade;
+  prioridade: Prioridade;
+  recorrente?: boolean; // Recorrência: Sim / Não
+  ativo: boolean;
+  dia_limite_padrao?: number;
+  orgao_competente?: string;
+}
+
+export interface ContaPagar {
+  id: string;
+  descricao: string;
+  fornecedor: string;
+  categoria: string;
+  valor: number;
+  data_vencimento: string;
+  data_pagamento?: string;
+  status: 'Pendente' | 'Pago' | 'Cancelado';
+  recorrencia: 'Único' | 'Mensal' | 'Anual';
+  observacoes?: string;
+  comprovante_url?: string;
+}
+
+export interface ContaReceber {
+  id: string;
+  descricao: string;
+  cliente_id: string;
+  cliente_nome: string;
+  categoria: 'Honorário Mensal' | 'Serviço Avulso' | 'Consultoria';
+  valor: number;
+  data_vencimento: string;
+  data_recebimento?: string;
+  status: 'Pendente' | 'Pago' | 'Vencido' | 'Cancelado';
+  provisao_mensal?: boolean; // Se foi gerado automaticamente a partir do MRR do cliente
+  observacoes?: string;
+}
+
+export interface CustoVinculadoReceita {
+  id: string;
+  descricao: string;
+  valor: number;
+  pago: boolean;
+  conciliado_ofx: boolean;
+}
+
+export interface ReceitaNaoRecorrente {
+  id: string;
+  cliente_id?: string;
+  cliente_nome: string;
+  titulo_servico: string; // Ex: Abertura de Empresa, Alteração Societária, Regularização
+  valor_total: number;
+  data_prevista: string;
+  data_recebimento?: string;
+  status: 'Previsto' | 'Recebido' | 'Cancelado';
+  custos_vinculados: CustoVinculadoReceita[];
+  conciliado_ofx: boolean;
+  created_at: string;
+}
+
+export interface TransacaoOFX {
+  id: string;
+  fitid: string;
+  tipo: 'DEBIT' | 'CREDIT';
+  data: string;
+  valor: number;
+  descricao: string;
+  conciliado: boolean;
+  banco: 'PicPay Empresas' | 'Outro';
+}
+
+export interface FuncionarioCliente {
+  id: string;
+  cliente_id: string;
+  nome_completo: string;
+  funcao: string;
+  data_admissao: string;
+  salario: number;
+  status: 'Ativo' | 'Afastado' | 'Desligado';
+  observacoes?: string;
+}
+
+export interface MovimentacaoFuncionario {
+  id: string;
+  cliente_id: string;
+  funcionario_id?: string;
+  funcionario_nome?: string;
+  data_solicitacao: string;
+  solicitado_por: string;
+  data_efeito: string;
+  tipo_alteracao: 'Admissão' | 'Férias' | 'Aumento Salarial' | 'Mudança de Cargo' | 'Rescisão' | 'Outros';
+  valor_alteracao?: string;
+  status: 'Pendente' | 'Em Análise' | 'Concluído';
+  observacoes?: string;
+}
+
+// ==================== MÓDULO CRM ====================
+
+export type CRMLeadEstagio = 'Novo Lead' | 'Qualificação' | 'Diagnóstico' | 'Proposta Enviada' | 'Negociação' | 'Fechado' | 'Perdido' | string;
+
+export interface CRMLead {
+  id: string;
+  nome: string;
+  empresa: string;
+  cpf_cnpj?: string;
+  telefone: string;
+  whatsapp?: string;
+  email: string;
+  origem: string;
+  servico_interesse: string;
+  estagio: CRMLeadEstagio;
+  prioridade: Prioridade;
+  valor_estimado: number;
+  responsavel: string;
+  data_proximo_followup?: string;
+  observacoes?: string;
+  tags?: string[];
+  data_entrada: string;
+  convertido_cliente_id?: string;
+}
+
+export interface CRMProcedimentoTemplate {
+  id: string;
+  nome: string;
+  descricao?: string;
+  servico: string;
+  etapas: {
+    nome: string;
+    ordem: number;
+    prazo_dias: number;
+    responsavel_padrao?: string;
+    obrigatoria: boolean;
+    documentos_exigidos?: string[];
+  }[];
+}
+
+export interface CRMProcedimento {
+  id: string;
+  cliente_id: string;
+  cliente_nome: string;
+  template_id?: string;
+  nome: string;
+  responsavel: string;
+  prazo_final: string;
+  servico: string;
+  status: 'Em Andamento' | 'Concluído' | 'Atrasado';
+  observacoes?: string;
+  created_at: string;
+}
+
+export interface CRMProcedimentoEtapa {
+  id: string;
+  procedimento_id: string;
+  nome: string;
+  ordem: number;
+  status: 'Pendente' | 'Em Andamento' | 'Concluída';
+  responsavel: string;
+  prazo: string;
+  obrigatoria: boolean;
+  observacoes?: string;
+}
+
+export interface CRMDocumento {
+  id: string;
+  cliente_id: string;
+  cliente_nome?: string;
+  procedimento_id?: string;
+  etapa_id?: string;
+  nome: string;
+  tipo: 'Contrato Social' | 'Cartão CNPJ' | 'Certificado Digital' | 'Extrato Bancário' | 'Outros';
+  status: 'Pendente' | 'Enviado' | 'Aprovado' | 'Rejeitado';
+  observacao?: string;
+  data_solicitacao: string;
+  data_limite?: string;
+  arquivo_url?: string;
+}
+
+export interface CRMEvento {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  data_inicio: string;
+  data_fim: string;
+  tipo: 'Reunião' | 'Apresentação' | 'Diagnóstico' | 'Alinhamento' | 'Follow-up';
+  lead_id?: string;
+  cliente_id?: string;
+  responsavel: string;
+  local?: string;
+  origem: 'Manual' | 'Google Agenda';
+  google_event_id?: string;
+}
+
+// ==================== MÓDULO WHATSAPP & AUTOMAÇÃO ====================
+
+export interface WhatsAppConfig {
+  conectado: boolean;
+  status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'QRCODE';
+  numero_conectado?: string;
+  nome_instancia?: string;
+  api_provider: 'Evolution API' | 'Z-API' | 'Meta Cloud API';
+  auto_enviar_manha: boolean; // 08:30
+  hora_envio_manha: string;
+  lembrete_dias_antes: number; // Ex: 1 dia antes
+  cobranca_atraso_ativa: boolean;
+  cobranca_documentos_ativa: boolean;
+}
+
+export interface WhatsAppMensagem {
+  id: string;
+  destinatario_tipo: 'Colaborador' | 'Cliente' | 'Lead';
+  destinatario_nome: string;
+  telefone: string;
+  tipo_notificacao: 'Resumo Diário' | 'Lembrete Prazo' | 'Cobrança Atraso' | 'Documento Pendente' | 'Honorário';
+  mensagem: string;
+  status: 'Fila' | 'Enviada' | 'Entregue' | 'Lida' | 'Falha';
+  data_envio: string;
+  referencia_id?: string; // id da tarefa, documento ou lead
+}

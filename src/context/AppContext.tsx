@@ -19,7 +19,8 @@ import {
   ContaReceber,
   ReceitaNaoRecorrente,
   CustoVinculadoReceita,
-  TransacaoOFX
+  TransacaoOFX,
+  HonorarioItem
 } from '@/types';
 import {
   initialClientes,
@@ -31,7 +32,8 @@ import {
   initialWhatsAppConfig,
   initialWhatsAppMensagens,
   initialContasPagar,
-  initialContasReceber
+  initialContasReceber,
+  initialHonorarios
 } from '@/lib/mockData';
 
 interface AppContextType {
@@ -47,6 +49,7 @@ interface AppContextType {
   whatsAppMensagens: WhatsAppMensagem[];
   contasPagar: ContaPagar[];
   contasReceber: ContaReceber[];
+  honorarios: HonorarioItem[];
   receitasNaoRecorrentes: ReceitaNaoRecorrente[];
   transacoesOFX: TransacaoOFX[];
   
@@ -101,6 +104,20 @@ interface AppContextType {
   addCustoReceitaNaoRecorrente: (receitaId: string, custo: Omit<CustoVinculadoReceita, 'id'>) => void;
   importarExtratoOFX: (banco: 'PicPay Empresas' | 'Outro', transacoes: Omit<TransacaoOFX, 'id'>[]) => void;
   conciliarTransacaoOFX: (transacaoId: string, referenciaDescricao: string) => void;
+
+  // Ações de Honorários por Competência (Regime Competência x Caixa)
+  darBaixaHonorario: (
+    id: string,
+    dadosBaixa: {
+      dataPagamento: string;
+      formaPagamento: 'PIX PicPay' | 'Boleto' | 'Transferência' | 'Dinheiro' | 'Outro';
+      valorPago?: number;
+      observacoes?: string;
+      notificarWhatsApp?: boolean;
+    }
+  ) => void;
+  gerarHonorariosCompetencia: (competenciaAlvo: string) => void;
+  dispararCobrancaHonorarioWhatsApp: (honorarioId: string) => void;
 
   // Ações de CRM
   addLead: (lead: Omit<CRMLead, 'id' | 'data_entrada'>) => void;
@@ -212,6 +229,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Estados Financeiros
   const [contasPagar, setContasPagar] = useState<ContaPagar[]>(initialContasPagar as ContaPagar[]);
   const [contasReceber, setContasReceber] = useState<ContaReceber[]>(initialContasReceber as ContaReceber[]);
+  const [honorarios, setHonorarios] = useState<HonorarioItem[]>(initialHonorarios);
   const [receitasNaoRecorrentes, setReceitasNaoRecorrentes] = useState<ReceitaNaoRecorrente[]>([
     {
       id: 'rec-avulsa-1',
@@ -276,6 +294,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (savedPagar) setContasPagar(JSON.parse(savedPagar));
       const savedReceber = localStorage.getItem('gestup_v2_contas_receber');
       if (savedReceber) setContasReceber(JSON.parse(savedReceber));
+      const savedHonorarios = localStorage.getItem('gestup_v2_honorarios');
+      if (savedHonorarios) setHonorarios(JSON.parse(savedHonorarios));
     } catch {}
   }, []);
 
@@ -304,6 +324,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem('gestup_v2_contas_receber', JSON.stringify(newReceber)); } catch {}
   };
 
+  const saveHonorarios = (newHons: HonorarioItem[]) => {
+    setHonorarios(newHons);
+    try { localStorage.setItem('gestup_v2_honorarios', JSON.stringify(newHons)); } catch {}
+  };
+
   const redefinirDadosPadrao = () => {
     try {
       localStorage.clear();
@@ -313,6 +338,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setDeclaracoes((initialDeclaracoes as Declaracao[]).map(enrichDeclaracao));
     setContasPagar(initialContasPagar as ContaPagar[]);
     setContasReceber(initialContasReceber as ContaReceber[]);
+    setHonorarios(initialHonorarios);
   };
 
   // ================= TAREFAS =================
@@ -678,6 +704,115 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTransacoesOFX(transacoesOFX.map(t => t.id === transacaoId ? { ...t, conciliado: true } : t));
   };
 
+  // ================= HONORÁRIOS POR COMPETÊNCIA (REGIME COMPETÊNCIA X CAIXA) =================
+  const darBaixaHonorario = (
+    id: string,
+    dadosBaixa: {
+      dataPagamento: string;
+      formaPagamento: 'PIX PicPay' | 'Boleto' | 'Transferência' | 'Dinheiro' | 'Outro';
+      valorPago?: number;
+      observacoes?: string;
+      notificarWhatsApp?: boolean;
+    }
+  ) => {
+    const [y, m] = dadosBaixa.dataPagamento.split('-');
+    const competenciaPag = `${m || '10'}/${y || '2026'}`;
+
+    const updated = honorarios.map(h => {
+      if (h.id === id) {
+        return {
+          ...h,
+          status: 'Pago' as const,
+          data_pagamento: dadosBaixa.dataPagamento,
+          competencia_pagamento: competenciaPag,
+          forma_pagamento: dadosBaixa.formaPagamento,
+          valor: dadosBaixa.valorPago !== undefined ? dadosBaixa.valorPago : h.valor,
+          observacoes: dadosBaixa.observacoes || h.observacoes,
+          dias_atraso: 0
+        };
+      }
+      return h;
+    });
+
+    saveHonorarios(updated);
+
+    if (dadosBaixa.notificarWhatsApp) {
+      const hon = honorarios.find(h => h.id === id);
+      if (hon) {
+        const msg = `✅ *Comprovante de Quitação - fin.up Consultoria*\n\n` +
+          `Olá, *${hon.contato_nome || hon.cliente_nome}*!\n\n` +
+          `Confirmamos a baixa e liquidação dos honorários da empresa *${hon.cliente_nome}*:\n` +
+          `• *Competência:* ${hon.competencia}\n` +
+          `• *Valor Pago:* R$ ${(dadosBaixa.valorPago ?? hon.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
+          `• *Data do Pagamento:* ${dadosBaixa.dataPagamento.split('-').reverse().join('/')}\n` +
+          `• *Forma de Pagamento:* ${dadosBaixa.formaPagamento}\n\n` +
+          `Agradecemos a pontualidade e a parceria contábil!`;
+
+        enviarMensagemWhatsApp(
+          'Cliente',
+          hon.cliente_nome,
+          hon.contato_telefone || '19999990000',
+          'Honorário',
+          msg,
+          hon.id
+        );
+      }
+    }
+  };
+
+  const gerarHonorariosCompetencia = (competenciaAlvo: string) => {
+    const [mes, ano] = competenciaAlvo.split('/');
+    const novos: HonorarioItem[] = clientes
+      .filter(c => c.status === 'Ativo' && c.honorario_mensal > 0)
+      .map((c, idx) => {
+        const diaVenc = String(c.dia_vencimento || 15).padStart(2, '0');
+        const venc = `${ano || '2026'}-${mes || '11'}-${diaVenc}`;
+        return {
+          id: `hon-${mes}_${ano}-${c.id}-${Date.now()}_${idx}`,
+          cliente_id: c.id,
+          cliente_nome: c.nome,
+          contato_nome: c.responsavel || c.nome.split(' ')[0],
+          contato_telefone: c.whatsapp || c.telefone,
+          competencia: competenciaAlvo,
+          valor: c.honorario_mensal,
+          data_vencimento: venc,
+          status: 'Pendente' as const,
+          parcela_info: `Mensalidade ${competenciaAlvo}`,
+          created_at: new Date().toISOString().split('T')[0]
+        };
+      });
+
+    saveHonorarios([...novos, ...honorarios]);
+  };
+
+  const dispararCobrancaHonorarioWhatsApp = (honorarioId: string) => {
+    const hon = honorarios.find(h => h.id === honorarioId);
+    if (!hon) return;
+
+    const dataVencFormatada = hon.data_vencimento.split('-').reverse().join('/');
+    const atrasoTexto = (hon.dias_atraso && hon.dias_atraso > 0)
+      ? ` Constatamos que a obrigação venceu em *${dataVencFormatada}* (${hon.dias_atraso} dias em atraso).`
+      : ` Lembramos que o vencimento é em *${dataVencFormatada}*.`;
+
+    const msg = `🔔 *Lembrete de Honorários Contábeis - fin.up Consultoria*\n\n` +
+      `Olá, *${hon.contato_nome || hon.cliente_nome}*!\n\n` +
+      `Passando para alinhar os honorários contábeis da empresa *${hon.cliente_nome}* referente à *Competência ${hon.competencia}*.\n\n` +
+      `💰 *Valor:* R$ ${hon.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
+      `📅 *Vencimento:* ${dataVencFormatada}\n` +
+      atrasoTexto + `\n\n` +
+      `Chave PIX fin.up: *financeiro@finup.com.br* (PicPay Empresas)\n\n` +
+      `Qualquer dúvida ou caso já tenha efetuado o pagamento, por favor nos envie o comprovante. Obrigado!`;
+
+    enviarMensagemWhatsApp(
+      'Cliente',
+      hon.cliente_nome,
+      hon.contato_telefone || '19999990000',
+      'Honorário',
+      msg,
+      hon.id
+    );
+  };
+
   // ================= CRM =================
   const addLead = (lead: Omit<CRMLead, 'id' | 'data_entrada'>) => {
     const novo: CRMLead = {
@@ -812,6 +947,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pagarConta,
         addContaReceber,
         receberConta,
+        honorarios,
+        darBaixaHonorario,
+        gerarHonorariosCompetencia,
+        dispararCobrancaHonorarioWhatsApp,
         gerarProvisaoMensalHonorarios,
         addReceitaNaoRecorrente,
         addCustoReceitaNaoRecorrente,

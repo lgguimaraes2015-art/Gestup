@@ -190,6 +190,27 @@ export interface ContaReceber {
   observacoes?: string;
 }
 
+export interface HonorarioItem {
+  id: string;
+  cliente_id: string;
+  cliente_nome: string;
+  contato_nome?: string;
+  contato_telefone?: string;
+  competencia: string; // Competência de origem (ex: "09/2026", "10/2026")
+  valor: number;
+  data_vencimento: string; // Data de vencimento (ex: "2026-09-30", "2026-10-05")
+  data_pagamento?: string; // Data da baixa/pagamento efetivo (ex: "2026-10-05")
+  competencia_pagamento?: string; // Mês em que entrou no caixa/faturamento realizado (ex: "10/2026")
+  status: 'Pendente' | 'Pago' | 'Vencido' | 'Cancelado';
+  parcela_info?: string; // Ex: "Parcela 4/12"
+  forma_pagamento?: 'PIX PicPay' | 'Boleto' | 'Transferência' | 'Dinheiro' | 'Outro';
+  comprovante_url?: string;
+  observacoes?: string;
+  conciliado_ofx?: boolean;
+  dias_atraso?: number;
+  created_at: string;
+}
+
 export interface CustoVinculadoReceita {
   id: string;
   descricao: string;

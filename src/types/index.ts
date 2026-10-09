@@ -111,7 +111,47 @@ export interface Tarefa {
   eh_pagamento?: boolean;
   guia_pagamento?: GuiaPagamentoTarefa;
   comentarios_lista?: ComentarioItem[];
+  eh_processo?: boolean; // Habilita a tarefa como Gestão de Processos com etapas
+  etapas_processo?: EtapaProcessoTarefa[];
   created_at: string;
+}
+
+export interface ArquivoEtapa {
+  id: string;
+  nome: string;
+  url: string;
+  tamanho?: string;
+  data_upload: string;
+}
+
+export type FrequenciaCobrancaWhatsApp =
+  | 'Diariamente'
+  | 'Dia sim, dia não'
+  | 'Semanalmente (Segundas-feiras)'
+  | 'Quinzenalmente';
+
+export interface ConfiguracaoCobrancaEtapa {
+  habilitado: boolean;
+  telefones: string[]; // 1 ou 2 números de WhatsApp
+  mensagem_padrao: string;
+  frequencia: FrequenciaCobrancaWhatsApp;
+  horario_envio: string; // Fixo às 08:00
+  ultimo_envio?: string;
+  proximo_envio?: string;
+  total_envios?: number;
+}
+
+export interface EtapaProcessoTarefa {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  ordem: number;
+  data_limite: string;
+  concluida: boolean;
+  data_conclusao?: string;
+  arquivos: ArquivoEtapa[];
+  cobrar_whatsapp: boolean;
+  configuracao_cobranca?: ConfiguracaoCobrancaEtapa;
 }
 
 export interface TarefaComentario {
@@ -372,12 +412,17 @@ export interface WhatsAppConfig {
   status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'QRCODE';
   numero_conectado?: string;
   nome_instancia?: string;
-  api_provider: 'Evolution API' | 'Z-API' | 'Meta Cloud API';
-  auto_enviar_manha: boolean; // 08:30
+  api_provider: 'Evolution API' | 'Z-API' | 'Meta Cloud API' | 'WhatsApp Web / QR Code';
+  auto_enviar_manha: boolean; // Disparo automático das 08:00
   hora_envio_manha: string;
   lembrete_dias_antes: number; // Ex: 1 dia antes
   cobranca_atraso_ativa: boolean;
   cobranca_documentos_ativa: boolean;
+  api_url?: string;
+  api_key?: string;
+  instancia_id?: string;
+  qrcode_base64?: string;
+  ultima_sincronizacao?: string;
 }
 
 export interface WhatsAppMensagem {

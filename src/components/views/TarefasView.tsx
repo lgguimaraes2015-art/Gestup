@@ -2,7 +2,16 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
-import { Tarefa, StatusTarefa, Departamento, Prioridade } from '@/types';
+import {
+  Tarefa,
+  StatusTarefa,
+  Departamento,
+  Prioridade,
+  EtapaProcessoTarefa,
+  ArquivoEtapa,
+  FrequenciaCobrancaWhatsApp,
+  ConfiguracaoCobrancaEtapa
+} from '@/types';
 import {
   CheckSquare,
   Clock,
@@ -29,7 +38,18 @@ import {
   DollarSign,
   ArrowRight,
   ExternalLink,
-  Mail
+  Mail,
+  Layers,
+  Paperclip,
+  Bell,
+  PhoneCall,
+  Smartphone,
+  Check,
+  PlusCircle,
+  Trash2,
+  Settings2,
+  Download,
+  Plus
 } from 'lucide-react';
 
 interface TarefasViewProps {
@@ -49,7 +69,16 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     prorrogarTarefa,
     adicionarComentarioTarefa,
     deleteTarefa,
-    dispararCobrancaTarefa
+    dispararCobrancaTarefa,
+    toggleProcessoTarefa,
+    adicionarEtapaProcesso,
+    atualizarEtapaProcesso,
+    alternarConclusaoEtapa,
+    excluirEtapaProcesso,
+    anexarArquivoEtapa,
+    removerArquivoEtapa,
+    configurarCobrancaWhatsAppEtapa,
+    dispararCobrancaEtapaWhatsApp
   } = useApp();
 
   // Estados de Controle de Visualização e Filtros
@@ -80,6 +109,29 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   const [concluirValor, setConcluirValor] = useState<string>('');
   const [concluirArquivoNome, setConcluirArquivoNome] = useState<string>('');
 
+  // NOVO: Gestão de Processos & Etapas
+  const [processoModalTarefa, setProcessoModalTarefa] = useState<Tarefa | null>(null);
+  const [novaEtapaTitulo, setNovaEtapaTitulo] = useState('');
+  const [novaEtapaDescricao, setNovaEtapaDescricao] = useState('');
+  const [novaEtapaDataLimite, setNovaEtapaDataLimite] = useState('');
+  const [novaEtapaCobrarWhatsApp, setNovaEtapaCobrarWhatsApp] = useState(true);
+
+  // NOVO: Janela Suspensa de Configuração de Cobrança WhatsApp da Etapa
+  const [cobrancaSuspensa, setCobrancaSuspensa] = useState<{
+    tarefaId: string;
+    etapaId: string;
+    etapaTitulo: string;
+    clienteNome: string;
+    dataLimite: string;
+    telefones: string[];
+    mensagem: string;
+    frequencia: FrequenciaCobrancaWhatsApp;
+  } | null>(null);
+
+  // NOVO: Modal / Formulário rápido de anexo por etapa
+  const [modalAnexoEtapa, setModalAnexoEtapa] = useState<{ tarefaId: string; etapaId: string } | null>(null);
+  const [novoArquivoNome, setNovoArquivoNome] = useState('');
+
   // Estados do Formulário de Nova Tarefa
   const [novoTitulo, setNovoTitulo] = useState('');
   const [novoDescricao, setNovoDescricao] = useState('');
@@ -91,6 +143,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   const [novoPrazoLegal, setNovoPrazoLegal] = useState('');
   const [novoCompetencia, setNovoCompetencia] = useState(competenciaSelecionada === 'todas' ? '10/2026' : competenciaSelecionada);
   const [novoTipo, setNovoTipo] = useState<'Recorrente' | 'Avulsa'>('Recorrente');
+  const [novoEhProcesso, setNovoEhProcesso] = useState<boolean>(false);
 
   // Feedbacks visuais
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
@@ -214,6 +267,36 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     const cliente = clientes.find(c => c.id === novoClienteId);
     if (!novoTitulo || !cliente || !novoPrazoMeta) return;
 
+    const etapasIniciais: EtapaProcessoTarefa[] = novoEhProcesso ? [
+      {
+        id: `etp-${Date.now()}-1`,
+        titulo: '1. Solicitação e Coleta de Documentos',
+        descricao: 'Coletar extratos e documentos contábeis com o cliente',
+        ordem: 1,
+        data_limite: novoPrazoMeta,
+        concluida: false,
+        arquivos: [],
+        cobrar_whatsapp: true,
+        configuracao_cobranca: {
+          habilitado: true,
+          telefones: [cliente.whatsapp || cliente.telefone || '19999990000'],
+          mensagem_padrao: `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para finalizarmos no prazo.`,
+          frequencia: 'Diariamente',
+          horario_envio: '08:00'
+        }
+      },
+      {
+        id: `etp-${Date.now()}-2`,
+        titulo: '2. Processamento e Emissão Final',
+        descricao: 'Execução técnica da obrigação fiscal/contábil',
+        ordem: 2,
+        data_limite: novoPrazoLegal || novoPrazoMeta,
+        concluida: false,
+        arquivos: [],
+        cobrar_whatsapp: false
+      }
+    ] : [];
+
     addTarefa({
       titulo: novoTitulo,
       descricao: novoDescricao,
@@ -228,7 +311,9 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
       categoria: novoDepto,
       competencia: novoCompetencia || '10/2026',
       tempo_gasto_minutos: 0,
-      recorrencia_tipo: novoTipo === 'Recorrente' ? 'Mensal' : 'Única'
+      recorrencia_tipo: novoTipo === 'Recorrente' ? 'Mensal' : 'Única',
+      eh_processo: novoEhProcesso,
+      etapas_processo: etapasIniciais
     });
 
     setModalOpen(false);
@@ -236,8 +321,98 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     setNovoDescricao('');
     setNovoPrazoMeta('');
     setNovoPrazoLegal('');
+    setNovoEhProcesso(false);
     setFeedbackToast('✅ Nova tarefa criada com sucesso!');
     setTimeout(() => setFeedbackToast(null), 4000);
+  };
+
+  // Funções de Gestão de Processos e Etapas
+  const handleAdicionarNovaEtapa = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!processoModalTarefa || !novaEtapaTitulo) return;
+    const tarefaLive = tarefas.find(t => t.id === processoModalTarefa.id) || processoModalTarefa;
+    const cliente = clientes.find(c => c.id === tarefaLive.cliente_id);
+    const ordemNova = (tarefaLive.etapas_processo?.length || 0) + 1;
+    const telefonesPadrao = [cliente?.whatsapp || cliente?.telefone || '19999990000'];
+
+    adicionarEtapaProcesso(tarefaLive.id, {
+      titulo: novaEtapaTitulo,
+      descricao: novaEtapaDescricao,
+      ordem: ordemNova,
+      data_limite: novaEtapaDataLimite || tarefaLive.data_prazo_meta,
+      arquivos: [],
+      cobrar_whatsapp: novaEtapaCobrarWhatsApp,
+      configuracao_cobranca: novaEtapaCobrarWhatsApp ? {
+        habilitado: true,
+        telefones: telefonesPadrao,
+        mensagem_padrao: `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para finalizarmos no prazo.`,
+        frequencia: 'Diariamente',
+        horario_envio: '08:00',
+        total_envios: 0
+      } : undefined
+    });
+
+    setNovaEtapaTitulo('');
+    setNovaEtapaDescricao('');
+    setNovaEtapaDataLimite('');
+    setFeedbackToast('✅ Nova etapa adicionada ao processo com sucesso!');
+    setTimeout(() => setFeedbackToast(null), 3000);
+  };
+
+  const handleAbrirConfiguracaoCobranca = (tarefaId: string, etapa: EtapaProcessoTarefa, clienteNome: string) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    const cliente = clientes.find(c => c.id === tarefa?.cliente_id);
+    const telefonesIniciais = etapa.configuracao_cobranca?.telefones && etapa.configuracao_cobranca.telefones.length > 0
+      ? [etapa.configuracao_cobranca.telefones[0] || '', etapa.configuracao_cobranca.telefones[1] || '']
+      : [cliente?.whatsapp || cliente?.telefone || '19999990000', ''];
+
+    setCobrancaSuspensa({
+      tarefaId,
+      etapaId: etapa.id,
+      etapaTitulo: etapa.titulo,
+      clienteNome,
+      dataLimite: etapa.data_limite,
+      telefones: telefonesIniciais,
+      mensagem: etapa.configuracao_cobranca?.mensagem_padrao || `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à empresa *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para darmos continuidade ao processo.`,
+      frequencia: etapa.configuracao_cobranca?.frequencia || 'Diariamente'
+    });
+  };
+
+  const handleSalvarCobrancaSuspensa = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cobrancaSuspensa) return;
+    const telefonesFiltrados = cobrancaSuspensa.telefones.map(t => t.trim()).filter(Boolean);
+    if (telefonesFiltrados.length === 0) {
+      alert('Informe ao menos 1 número de WhatsApp para os disparos automáticos.');
+      return;
+    }
+
+    configurarCobrancaWhatsAppEtapa(cobrancaSuspensa.tarefaId, cobrancaSuspensa.etapaId, {
+      habilitado: true,
+      telefones: telefonesFiltrados,
+      mensagem_padrao: cobrancaSuspensa.mensagem,
+      frequencia: cobrancaSuspensa.frequencia,
+      horario_envio: '08:00'
+    });
+
+    setCobrancaSuspensa(null);
+    setFeedbackToast('📲 Régua de cobrança via WhatsApp configurada para as 08:00h com sucesso!');
+    setTimeout(() => setFeedbackToast(null), 4000);
+  };
+
+  const handleSalvarAnexoEtapa = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalAnexoEtapa || !novoArquivoNome) return;
+    const nomeFormatado = novoArquivoNome.includes('.') ? novoArquivoNome : `${novoArquivoNome}.pdf`;
+    anexarArquivoEtapa(modalAnexoEtapa.tarefaId, modalAnexoEtapa.etapaId, {
+      nome: nomeFormatado,
+      url: '#',
+      tamanho: '1.2 MB'
+    });
+    setModalAnexoEtapa(null);
+    setNovoArquivoNome('');
+    setFeedbackToast('📎 Arquivo anexado à etapa com sucesso!');
+    setTimeout(() => setFeedbackToast(null), 3000);
   };
 
   // Abrir Modal Inteligente de Conclusão de Tarefa
@@ -654,6 +829,17 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                                 <Building className="w-3 h-3 text-slate-400" />
                                 {tarefa.cliente_nome}
                               </span>
+                              {/* NOVO: Badge Interativo de Gestão de Processos */}
+                              {tarefa.eh_processo && (
+                                <button
+                                  onClick={() => setProcessoModalTarefa(tarefa)}
+                                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 transition-all"
+                                  title="Abrir Gestão de Processos e Etapas"
+                                >
+                                  <Layers className="w-2.5 h-2.5 text-indigo-600" />
+                                  <span>Processo ({tarefa.etapas_processo?.filter(e => e.concluida).length || 0}/{tarefa.etapas_processo?.length || 0})</span>
+                                </button>
+                              )}
                               {tarefa.prorrogacoes_count ? (
                                 <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.2 rounded-full">
                                   {tarefa.prorrogacoes_count}x prorrogada
@@ -749,6 +935,29 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                         {/* Ações Inteligentes */}
                         <td className="px-5 py-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            {/* NOVO: Gestão de Processos & Etapas */}
+                            <button
+                              onClick={() => {
+                                if (!tarefa.eh_processo) {
+                                  toggleProcessoTarefa(tarefa.id, true);
+                                }
+                                setProcessoModalTarefa(tarefa);
+                              }}
+                              title={tarefa.eh_processo ? "Gerenciar Etapas e Cobrança do Processo" : "Habilitar Gestão de Processos nesta Tarefa"}
+                              className={`p-1.5 rounded-lg border flex items-center gap-1 transition-all ${
+                                tarefa.eh_processo
+                                  ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 font-bold'
+                                  : 'bg-slate-50 hover:bg-slate-100 text-slate-400 border-slate-200'
+                              }`}
+                            >
+                              <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                              {tarefa.eh_processo && tarefa.etapas_processo && (
+                                <span className="text-[10px] text-indigo-700">
+                                  {tarefa.etapas_processo.filter(e => e.concluida).length}/{tarefa.etapas_processo.length}
+                                </span>
+                              )}
+                            </button>
+
                             {/* NOVO: Botãozinho com Balão Verde de Comentários */}
                             <button
                               onClick={() => {
@@ -917,15 +1126,66 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                                 </span>
                               </div>
                             </div>
+
+                            {/* NOVO: Bloco de Gestão de Processos no Card do Kanban */}
+                            {tarefa.eh_processo && (
+                              <div className="mt-2.5 p-2 bg-indigo-50/80 rounded-xl border border-indigo-200">
+                                <div className="flex items-center justify-between text-[10px] font-bold text-indigo-950 mb-1">
+                                  <span className="flex items-center gap-1">
+                                    <Layers className="w-3 h-3 text-indigo-600" />
+                                    Processo
+                                  </span>
+                                  <span>
+                                    {tarefa.etapas_processo?.filter(e => e.concluida).length || 0}/{tarefa.etapas_processo?.length || 0} concluídas
+                                  </span>
+                                </div>
+                                <div className="w-full bg-indigo-200 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className="bg-indigo-600 h-1.5 rounded-full transition-all"
+                                    style={{
+                                      width: `${(tarefa.etapas_processo && tarefa.etapas_processo.length > 0)
+                                        ? (tarefa.etapas_processo.filter(e => e.concluida).length / tarefa.etapas_processo.length) * 100
+                                        : 0}%`
+                                    }}
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setProcessoModalTarefa(tarefa);
+                                  }}
+                                  className="mt-1.5 w-full py-0.5 text-center text-[10px] font-bold text-indigo-700 hover:text-indigo-900 hover:bg-indigo-100 rounded-lg transition-all"
+                                >
+                                  Etapas & Cobrança WhatsApp ➔
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           {/* Rodapé do Card com Ações */}
                           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                            <span className="text-[10px] font-medium text-slate-500 truncate max-w-[90px]">
+                            <span className="text-[10px] font-medium text-slate-500 truncate max-w-[85px]">
                               {tarefa.responsavel}
                             </span>
 
                             <div className="flex items-center gap-1">
+                              {/* NOVO: Ação de Processo */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!tarefa.eh_processo) toggleProcessoTarefa(tarefa.id, true);
+                                  setProcessoModalTarefa(tarefa);
+                                }}
+                                title={tarefa.eh_processo ? "Gerenciar Etapas e Cobrança" : "Habilitar Processo"}
+                                className={`p-1.5 rounded-lg border transition-all ${
+                                  tarefa.eh_processo
+                                    ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 font-bold'
+                                    : 'bg-slate-50 hover:bg-slate-100 text-slate-400 border-slate-200'
+                                }`}
+                              >
+                                <Layers className="w-3 h-3 text-indigo-600" />
+                              </button>
                               {/* Botão de Comentários (Balão Verde) */}
                               <button
                                 onClick={() => {
@@ -1351,6 +1611,27 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                 />
               </div>
 
+              {/* CHECK: TRANSFORMAR EM GESTÃO DE PROCESSOS */}
+              <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-2xl">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={novoEhProcesso}
+                    onChange={e => setNovoEhProcesso(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                      Transformar em Gestão de Processos (com etapas & régua WhatsApp)
+                    </span>
+                    <span className="text-[11px] text-slate-500 block mt-0.5">
+                      Habilita divisão em etapas, anexos de arquivos por etapa e cobrança automática via WhatsApp às 08:00h da manhã.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -1435,6 +1716,687 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-sm"
                 >
                   Confirmar Prorrogação
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 9. MODAL PRINCIPAL: GESTÃO DE PROCESSOS & ETAPAS */}
+      {processoModalTarefa && (() => {
+        const tarefaLive = tarefas.find(t => t.id === processoModalTarefa.id) || processoModalTarefa;
+        const etapas = tarefaLive.etapas_processo || [];
+        const totalEtapas = etapas.length;
+        const etapasConcluidas = etapas.filter(e => e.concluida).length;
+        const percentualConcluido = totalEtapas > 0 ? Math.round((etapasConcluidas / totalEtapas) * 100) : 0;
+        const etapasComCobranca = etapas.filter(e => e.cobrar_whatsapp && !e.concluida).length;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+              {/* Topo do Modal de Processo */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-indigo-50/80 via-blue-50/50 to-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-slate-900 text-base">Gestão de Processos & Etapas</h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                        {tarefaLive.eh_processo ? 'Processo Ativo' : 'Modo Simples'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      <strong>{tarefaLive.titulo}</strong> • 🏢 {tarefaLive.cliente_nome} • 🗓️ Comp: {tarefaLive.competencia}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleProcessoTarefa(tarefaLive.id, !tarefaLive.eh_processo)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                      tarefaLive.eh_processo
+                        ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                        : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tarefaLive.eh_processo ? 'Desativar Processo' : 'Ativar como Processo'}
+                  </button>
+                  <button
+                    onClick={() => setProcessoModalTarefa(null)}
+                    className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Corpo com Rolagem */}
+              <div className="p-6 flex-1 overflow-y-auto space-y-6 text-xs">
+                {/* Banner Oficial da Regra de Cobrança das 08h */}
+                <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/90 flex items-start gap-3">
+                  <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700 shrink-0 mt-0.5">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1 text-indigo-950">
+                    <h4 className="font-bold text-xs flex items-center gap-2">
+                      <span>Régua Automática das 08:00h da Manhã por WhatsApp</span>
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        Ativa
+                      </span>
+                    </h4>
+                    <p className="text-[11px] leading-relaxed text-indigo-900/80">
+                      As etapas com cobrança ativada disparam mensagens pontualmente às <strong>08:00h da manhã</strong> para até 2 contatos cadastrados, conforme a frequência configurada (diária, dia sim dia não, segundas ou quinzenal). 
+                      <strong className="text-indigo-950 block mt-0.5">⚠️ A cobrança só é interrompida quando a etapa for manualmente marcada como CONCLUÍDA.</strong>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Resumo e Barra de Progresso */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-700">Progresso Geral do Processo:</span>
+                    <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg">
+                      {etapasConcluidas} de {totalEtapas} etapas concluídas ({percentualConcluido}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${percentualConcluido}%` }}
+                    />
+                  </div>
+                  {etapasComCobranca > 0 && (
+                    <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5" />
+                      <span>{etapasComCobranca} etapa(s) pendente(s) programada(s) para cobrança via WhatsApp às 08:00h.</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Lista de Etapas Existentes */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                      <span>Etapas do Processo ({totalEtapas})</span>
+                    </h4>
+                    <span className="text-[11px] text-slate-400">Marque o check para concluir a etapa e parar a cobrança</span>
+                  </div>
+
+                  {totalEtapas === 0 ? (
+                    <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-2xl text-slate-400">
+                      Nenhuma etapa cadastrada neste processo ainda. Adicione uma etapa no formulário abaixo.
+                    </div>
+                  ) : (
+                    etapas.map((etapa, idx) => (
+                      <div
+                        key={etapa.id}
+                        className={`p-4 rounded-2xl border transition-all ${
+                          etapa.concluida
+                            ? 'bg-emerald-50/40 border-emerald-200/80 shadow-xs'
+                            : 'bg-white border-slate-200 hover:border-indigo-300 shadow-sm'
+                        }`}
+                      >
+                        {/* Linha 1: Checkbox de Conclusão, Título e Badges */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 flex-1">
+                            <input
+                              type="checkbox"
+                              checked={etapa.concluida}
+                              onChange={() => alternarConclusaoEtapa(tarefaLive.id, etapa.id)}
+                              className="w-5 h-5 mt-0.5 text-brand-green rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                              title={etapa.concluida ? "Reabrir etapa" : "Concluir etapa (interrompe cobrança WhatsApp)"}
+                            />
+                            <div className="space-y-1 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span
+                                  className={`font-bold text-sm ${
+                                    etapa.concluida
+                                      ? 'line-through text-slate-500'
+                                      : 'text-slate-900'
+                                  }`}
+                                >
+                                  {etapa.titulo}
+                                </span>
+
+                                {/* Badges de Status da Etapa */}
+                                {etapa.concluida ? (
+                                  <>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-brand-green" />
+                                      Concluída ({etapa.data_conclusao || 'Manual'})
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                      🛑 Cobrança WhatsApp Pausada
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                      <Calendar className="w-3 h-3 text-amber-600" />
+                                      Data Limite: {etapa.data_limite}
+                                    </span>
+                                    {etapa.cobrar_whatsapp ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 animate-pulse">
+                                        <Bell className="w-3 h-3 text-emerald-600" />
+                                        Cobrança Ativa às 08h ({etapa.configuracao_cobranca?.frequencia || 'Diariamente'})
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500">
+                                        Sem cobrança automática
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+
+                              {etapa.descricao && (
+                                <p className="text-slate-600 text-xs mt-0.5 leading-relaxed">{etapa.descricao}</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Botão de Excluir Etapa */}
+                          <button
+                            type="button"
+                            onClick={() => excluirEtapaProcesso(tarefaLive.id, etapa.id)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                            title="Remover esta etapa"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Linha 2: Arquivos Anexos da Etapa */}
+                        <div className="mt-3 pt-3 border-t border-slate-100/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                              <Paperclip className="w-3 h-3 text-slate-400" />
+                              Anexos ({etapa.arquivos?.length || 0}):
+                            </span>
+
+                            {(!etapa.arquivos || etapa.arquivos.length === 0) ? (
+                              <span className="text-[11px] text-slate-400 italic">Nenhum arquivo anexado</span>
+                            ) : (
+                              etapa.arquivos.map(arq => (
+                                <div
+                                  key={arq.id}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[11px] text-slate-700 font-medium"
+                                >
+                                  <FileText className="w-3 h-3 text-indigo-600" />
+                                  <span className="truncate max-w-[140px]">{arq.nome}</span>
+                                  {arq.tamanho && <span className="text-[9px] text-slate-400">({arq.tamanho})</span>}
+                                  <button
+                                    type="button"
+                                    onClick={() => removerArquivoEtapa(tarefaLive.id, etapa.id, arq.id)}
+                                    className="text-slate-400 hover:text-red-600 p-0.5"
+                                    title="Remover anexo"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setModalAnexoEtapa({ tarefaId: tarefaLive.id, etapaId: etapa.id })}
+                            className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[11px] font-bold flex items-center gap-1 shrink-0 transition-all"
+                          >
+                            <Upload className="w-3 h-3" />
+                            <span>Anexar Arquivo</span>
+                          </button>
+                        </div>
+
+                        {/* Linha 3: Bloco de Cobrança WhatsApp da Etapa */}
+                        <div className="mt-3 pt-3 border-t border-slate-100/90">
+                          {etapa.cobrar_whatsapp ? (
+                            <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-xs text-emerald-950 flex items-center gap-1">
+                                    <MessageSquare className="w-3.5 h-3.5 text-brand-green" />
+                                    Cobrança via WhatsApp Configurada
+                                  </span>
+                                  <span className="text-[10px] font-bold text-emerald-800 bg-white border border-emerald-300 px-2 py-0.5 rounded-full shadow-2xs">
+                                    {etapa.configuracao_cobranca?.frequencia || 'Diariamente'} às 08:00h
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-emerald-900 space-x-3">
+                                  <span>
+                                    📱 <strong>Destinatários:</strong> {etapa.configuracao_cobranca?.telefones?.filter(Boolean).join(', ') || 'Nenhum'}
+                                  </span>
+                                  <span>
+                                    📤 <strong>Disparos Realizados:</strong> {etapa.configuracao_cobranca?.total_envios || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAbrirConfiguracaoCobranca(tarefaLive.id, etapa, tarefaLive.cliente_nome)}
+                                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold transition-all shadow-xs"
+                                >
+                                  ⚙️ Ajustar Cobrança
+                                </button>
+                                {!etapa.concluida && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      dispararCobrancaEtapaWhatsApp(tarefaLive.id, etapa.id);
+                                      setFeedbackToast(`📲 Cobrança da etapa "${etapa.titulo}" disparada imediatamente via WhatsApp!`);
+                                      setTimeout(() => setFeedbackToast(null), 4000);
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                                    title="Testar disparo da mensagem para os contatos configurados agora"
+                                  >
+                                    <Send className="w-3 h-3" />
+                                    <span>Disparar Agora (Teste)</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                              <span className="text-slate-600 text-xs">
+                                Deseja notificar o cliente automaticamente caso esta etapa não seja cumprida?
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleAbrirConfiguracaoCobranca(tarefaLive.id, etapa, tarefaLive.cliente_nome)}
+                                className="px-3 py-1.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
+                              >
+                                <Bell className="w-3.5 h-3.5" />
+                                <span>Configurar Cobrança via WhatsApp</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Formulário: Adicionar Nova Etapa */}
+                <form onSubmit={handleAdicionarNovaEtapa} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3">
+                  <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                    <Plus className="w-4 h-4 text-indigo-600" />
+                    <span>Adicionar Nova Etapa a este Processo</span>
+                  </h4>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="md:col-span-2">
+                      <label className="block font-semibold text-slate-700 mb-1">Título da Etapa *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Coleta de Assinaturas, Emissão de DARE, Protocolo..."
+                        value={novaEtapaTitulo}
+                        onChange={e => setNovaEtapaTitulo(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Data Limite da Etapa *</label>
+                      <input
+                        type="date"
+                        required
+                        value={novaEtapaDataLimite}
+                        onChange={e => setNovaEtapaDataLimite(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Instruções / Descrição (Opcional)</label>
+                    <input
+                      type="text"
+                      placeholder="Detalhes ou checklist de documentos desta etapa..."
+                      value={novaEtapaDescricao}
+                      onChange={e => setNovaEtapaDescricao(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={novaEtapaCobrarWhatsApp}
+                        onChange={e => setNovaEtapaCobrarWhatsApp(e.target.checked)}
+                        className="w-4 h-4 text-brand-green rounded border-slate-300 focus:ring-emerald-500"
+                      />
+                      <span>Habilitar cobrança automática via WhatsApp às 08:00h para esta etapa</span>
+                    </label>
+
+                    <button
+                      type="submit"
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Adicionar Etapa</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Rodapé do Modal */}
+              <div className="px-6 py-3.5 border-t border-slate-100 flex items-center justify-end bg-slate-50/50">
+                <button
+                  type="button"
+                  onClick={() => setProcessoModalTarefa(null)}
+                  className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all shadow-sm"
+                >
+                  Fechar Painel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 10. JANELA SUSPENSA (MODAL SUSPENSO): CONFIGURAÇÃO DE COBRANÇA WHATSAPP */}
+      {cobrancaSuspensa && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-emerald-50/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-brand-green text-white flex items-center justify-center shadow-md">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Configuração de Cobrança Automática via WhatsApp</h3>
+                  <p className="text-xs text-slate-500">
+                    Etapa: <strong>{cobrancaSuspensa.etapaTitulo}</strong> • {cobrancaSuspensa.clienteNome}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCobrancaSuspensa(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarCobrancaSuspensa} className="p-6 overflow-y-auto space-y-4 text-xs flex-1">
+              {/* Alerta de Horário e Regra */}
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-emerald-950 space-y-1">
+                <div className="flex items-center gap-2 font-bold text-xs">
+                  <Clock className="w-4 h-4 text-emerald-700" />
+                  <span>Horário Fixo de Disparo: 08:00h da Manhã</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-emerald-900/80">
+                  O robô do WhatsApp enviará a cobrança pontualmente às <strong>08h da manhã</strong> na frequência escolhida. 
+                  <strong>A régua só é interrompida quando a etapa for manualmente marcada como CONCLUÍDA.</strong>
+                </p>
+              </div>
+
+              {/* Telefones 1 e 2 do WhatsApp */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-800">Números de WhatsApp para Cobrança (Até 2 números)</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cli = clientes.find(c => c.nome === cobrancaSuspensa.clienteNome);
+                      if (cli) {
+                        const tel1 = cli.whatsapp || cli.telefone || '19999990000';
+                        const tel2 = (cli.contatos_notificacao && cli.contatos_notificacao[1]?.telefoneOuGrupo) || '';
+                        setCobrancaSuspensa(prev => prev ? { ...prev, telefones: [tel1, tel2] } : null);
+                      }
+                    }}
+                    className="text-[11px] font-bold text-brand-blue hover:underline"
+                  >
+                    Puxar Telefones do Cadastro ➔
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">WhatsApp 1 (Principal) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: 5519999870840"
+                      value={cobrancaSuspensa.telefones[0] || ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCobrancaSuspensa(prev => prev ? {
+                          ...prev,
+                          telefones: [val, prev.telefones[1] || '']
+                        } : null);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">WhatsApp 2 (Opcional - Sócio / Financeiro)</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 5519992803902"
+                      value={cobrancaSuspensa.telefones[1] || ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCobrancaSuspensa(prev => prev ? {
+                          ...prev,
+                          telefones: [prev.telefones[0] || '', val]
+                        } : null);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Frequência de Envio */}
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  Frequência de Envio das Mensagens às 08:00h *
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {(['Diariamente', 'Dia sim, dia não', 'Semanalmente (Segundas-feiras)', 'Quinzenalmente'] as FrequenciaCobrancaWhatsApp[]).map(freq => (
+                    <button
+                      key={freq}
+                      type="button"
+                      onClick={() => setCobrancaSuspensa(prev => prev ? { ...prev, frequencia: freq } : null)}
+                      className={`p-2.5 rounded-2xl border text-left transition-all ${
+                        cobrancaSuspensa.frequencia === freq
+                          ? 'bg-emerald-50 border-brand-green text-emerald-950 font-bold shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs">{freq}</span>
+                        {cobrancaSuspensa.frequencia === freq && (
+                          <Check className="w-3.5 h-3.5 text-brand-green" />
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Disparo matinal às 08:00h</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Mensagem Padrão para Cobrança */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-800">Mensagem Padrão de Cobrança *</label>
+                  <span className="text-[10px] text-slate-400">Variáveis dinâmicas suportadas</span>
+                </div>
+
+                {/* Variáveis Dinâmicas */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { tag: '{cliente}', label: 'Nome do Cliente' },
+                    { tag: '{empresa}', label: 'Nome da Empresa' },
+                    { tag: '{etapa}', label: 'Nome da Etapa' },
+                    { tag: '{data_limite}', label: 'Data Limite' }
+                  ].map(v => (
+                    <button
+                      key={v.tag}
+                      type="button"
+                      onClick={() => {
+                        setCobrancaSuspensa(prev => prev ? {
+                          ...prev,
+                          mensagem: `${prev.mensagem} ${v.tag}`
+                        } : null);
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[10px] font-bold text-slate-700 transition-all"
+                    >
+                      + {v.tag}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  required
+                  rows={4}
+                  value={cobrancaSuspensa.mensagem}
+                  onChange={e => setCobrancaSuspensa(prev => prev ? { ...prev, mensagem: e.target.value } : null)}
+                  className="w-full px-3 py-2.5 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-300 leading-relaxed font-sans"
+                />
+              </div>
+
+              {/* Pré-visualização do Balão de WhatsApp */}
+              <div className="p-3 bg-slate-100 rounded-2xl border border-slate-200 space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Pré-visualização da Notificação no WhatsApp
+                </span>
+                <div className="bg-[#E7FFDB] p-3 rounded-2xl border border-[#D0F5BD] shadow-2xs space-y-1 text-slate-900 text-xs">
+                  <p className="font-bold text-emerald-950 text-[11px]">🔔 Lembrete de Etapa - fin.up (08:00h)</p>
+                  <p className="whitespace-pre-line leading-relaxed">
+                    {cobrancaSuspensa.mensagem
+                      .replace(/\{cliente\}/g, cobrancaSuspensa.clienteNome.split(' ')[0] || 'Cliente')
+                      .replace(/\{empresa\}/g, cobrancaSuspensa.clienteNome)
+                      .replace(/\{etapa\}/g, cobrancaSuspensa.etapaTitulo)
+                      .replace(/\{data_limite\}/g, cobrancaSuspensa.dataLimite)}
+                  </p>
+                  <div className="flex items-center justify-end gap-1 text-[9px] text-slate-500 pt-1">
+                    <span>08:00</span>
+                    <span className="text-brand-blue font-bold">✓✓</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const tel = cobrancaSuspensa.telefones[0];
+                    if (!tel) {
+                      alert('Informe o WhatsApp 1 para enviar o teste.');
+                      return;
+                    }
+                    dispararCobrancaEtapaWhatsApp(cobrancaSuspensa.tarefaId, cobrancaSuspensa.etapaId);
+                    setFeedbackToast(`📲 Mensagem de teste enviada com sucesso para ${tel}!`);
+                    setTimeout(() => setFeedbackToast(null), 4000);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all flex items-center gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Testar Disparo Agora</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCobrancaSuspensa(null)}
+                    className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold text-xs"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs shadow-sm transition-all"
+                  >
+                    Salvar e Ativar Cobrança
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 11. MODAL: ANEXAR ARQUIVO À ETAPA */}
+      {modalAnexoEtapa && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                <Paperclip className="w-4 h-4 text-indigo-600" />
+                <span>Anexar Arquivo à Etapa</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAnexoEtapa(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarAnexoEtapa} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Nome do Arquivo / Documento *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Contrato_Social_Consolidado.pdf, Extrato_OFX_092026.ofx..."
+                  value={novoArquivoNome}
+                  onChange={e => setNovoArquivoNome(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                />
+              </div>
+
+              {/* Botões de sugestão rápida */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Sugestões Rápidas:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    'Extrato_Bancario_Consolidado.pdf',
+                    'Planilha_Fechamento_Fiscal.xlsx',
+                    'DARE_Taxa_Junta_Comercial.pdf',
+                    'Checklist_Documentos_Assinados.pdf'
+                  ].map(sug => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setNovoArquivoNome(sug)}
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-700 font-medium"
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalAnexoEtapa(null)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm"
+                >
+                  Anexar Documento
                 </button>
               </div>
             </form>

@@ -20,7 +20,10 @@ import {
   ReceitaNaoRecorrente,
   CustoVinculadoReceita,
   TransacaoOFX,
-  HonorarioItem
+  HonorarioItem,
+  EtapaProcessoTarefa,
+  ArquivoEtapa,
+  ConfiguracaoCobrancaEtapa
 } from '@/types';
 import {
   initialClientes,
@@ -75,6 +78,22 @@ interface AppContextType {
   ) => void;
   prorrogarTarefa: (id: string, novoPrazoMeta: string, motivo: string) => void;
   adicionarComentarioTarefa: (id: string, autor: string, texto: string) => void;
+
+  // Ações de Gestão de Processos em Tarefas (NOVO)
+  toggleProcessoTarefa: (tarefaId: string, ehProcesso: boolean) => void;
+  adicionarEtapaProcesso: (tarefaId: string, etapa: Omit<EtapaProcessoTarefa, 'id' | 'concluida'>) => void;
+  atualizarEtapaProcesso: (tarefaId: string, etapaId: string, updates: Partial<EtapaProcessoTarefa>) => void;
+  alternarConclusaoEtapa: (tarefaId: string, etapaId: string) => void;
+  excluirEtapaProcesso: (tarefaId: string, etapaId: string) => void;
+  anexarArquivoEtapa: (tarefaId: string, etapaId: string, arquivo: Omit<ArquivoEtapa, 'id' | 'data_upload'>) => void;
+  removerArquivoEtapa: (tarefaId: string, etapaId: string, arquivoId: string) => void;
+  configurarCobrancaWhatsAppEtapa: (tarefaId: string, etapaId: string, config: ConfiguracaoCobrancaEtapa) => void;
+  dispararCobrancaEtapaWhatsApp: (tarefaId: string, etapaId: string) => void;
+
+  // Ações de Conexão WhatsApp (NOVO)
+  conectarWhatsAppSimulado: (numero: string) => void;
+  desconectarWhatsApp: () => void;
+  gerarQRCodeWhatsApp: () => void;
 
   // Ações de Clientes & Auditoria
   addCliente: (cliente: Omit<Cliente, 'id' | 'created_at'>) => void;
@@ -195,18 +214,90 @@ const enrichCliente = (c: Cliente): Cliente => ({
   ]
 });
 
-const enrichTarefa = (t: Tarefa): Tarefa => ({
-  ...t,
-  eh_pagamento: t.eh_pagamento ?? (t.categoria === 'Fiscal' || t.titulo.toLowerCase().includes('das') || t.titulo.toLowerCase().includes('inss') || t.titulo.toLowerCase().includes('fgts')),
-  comentarios_lista: (t.comentarios_lista && t.comentarios_lista.length > 0) ? t.comentarios_lista : [
-    {
-      id: `cmt-init-${t.id}`,
-      autor: t.responsavel || 'Equipe fin.up',
-      data: '2026-10-05 09:00',
-      texto: `Rotina operacional iniciada para a competência ${t.competencia}. Prazo Legal: ${t.data_prazo_legal}`
-    }
-  ]
-});
+const enrichTarefa = (t: Tarefa): Tarefa => {
+  const isProcessoDefault = t.eh_processo ?? (
+    t.id === '6a7ddd87bfda5c46480a33f4' || 
+    t.titulo.toLowerCase().includes('abertura') || 
+    t.titulo.toLowerCase().includes('alteração') || 
+    t.titulo.toLowerCase().includes('recuperação') || 
+    t.titulo.toLowerCase().includes('regularização') ||
+    t.titulo.toLowerCase().includes('adiantamento')
+  );
+
+  const defaultEtapas: EtapaProcessoTarefa[] = (t.etapas_processo && t.etapas_processo.length > 0)
+    ? t.etapas_processo
+    : (isProcessoDefault ? [
+        {
+          id: `etp-1-${t.id}`,
+          titulo: '1. Coleta e Conferência de Documentos',
+          descricao: 'Solicitar e conferir extratos bancários, cartões e documentação do cliente.',
+          ordem: 1,
+          data_limite: '2026-10-14',
+          concluida: true,
+          data_conclusao: '2026-10-06 14:20',
+          arquivos: [
+            { id: `arq-1-${t.id}`, nome: 'Checklist_Documentos_Assinados.pdf', url: '#', data_upload: '2026-10-06', tamanho: '1.4 MB' }
+          ],
+          cobrar_whatsapp: false
+        },
+        {
+          id: `etp-2-${t.id}`,
+          titulo: '2. Envio de Relatório Prévio e Aprovação do Cliente',
+          descricao: 'Enviar prévia para o cliente validar e autorizar processamento.',
+          ordem: 2,
+          data_limite: '2026-10-18',
+          concluida: false,
+          arquivos: [
+            { id: `arq-2-${t.id}`, nome: 'Previa_Fechamento_Competencia.xlsx', url: '#', data_upload: '2026-10-07', tamanho: '850 KB' }
+          ],
+          cobrar_whatsapp: true,
+          configuracao_cobranca: {
+            habilitado: true,
+            telefones: ['19992803902', '19999870840'],
+            mensagem_padrao: 'Olá {cliente}! Lembramos que a etapa *{etapa}* referente à empresa *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar a validação para darmos continuidade ao processo.',
+            frequencia: 'Diariamente',
+            horario_envio: '08:00',
+            ultimo_envio: '2026-10-08 08:00',
+            proximo_envio: '2026-10-09 08:00',
+            total_envios: 2
+          }
+        },
+        {
+          id: `etp-3-${t.id}`,
+          titulo: '3. Protocolo e Emissão das Guias Finais',
+          descricao: 'Gerar guias finais, transmitir ao órgão e anexar comprovantes.',
+          ordem: 3,
+          data_limite: '2026-10-22',
+          concluida: false,
+          arquivos: [],
+          cobrar_whatsapp: true,
+          configuracao_cobranca: {
+            habilitado: true,
+            telefones: ['19992803902'],
+            mensagem_padrao: 'Prezado(a) {cliente}, informamos que a etapa *{etapa}* está agendada para finalização até *{data_limite}*. Qualquer dúvida contate a equipe fin.up.',
+            frequencia: 'Semanalmente (Segundas-feiras)',
+            horario_envio: '08:00',
+            proximo_envio: '2026-10-12 08:00',
+            total_envios: 0
+          }
+        }
+      ] : []);
+
+  return {
+    ...t,
+    eh_processo: isProcessoDefault,
+    etapas_processo: defaultEtapas,
+    eh_pagamento: t.eh_pagamento ?? (t.categoria === 'Fiscal' || t.titulo.toLowerCase().includes('das') || t.titulo.toLowerCase().includes('inss') || t.titulo.toLowerCase().includes('fgts')),
+    comentarios_lista: (t.comentarios_lista && t.comentarios_lista.length > 0) ? t.comentarios_lista : [
+      {
+        id: `cmt-init-${t.id}`,
+        autor: t.responsavel || 'Equipe fin.up',
+        data: '2026-10-05 09:00',
+        texto: `Rotina operacional iniciada para a competência ${t.competencia}. Prazo Legal: ${t.data_prazo_legal}`
+      }
+    ]
+  };
+};
 
 const enrichDeclaracao = (d: Declaracao): Declaracao => ({
   ...d,
@@ -488,6 +579,194 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateTarefa(id, {
       comentarios_lista: [novoComentario, ...listaAtual]
     });
+  };
+
+  // ================= GESTÃO DE PROCESSOS EM TAREFAS =================
+  const toggleProcessoTarefa = (tarefaId: string, ehProcesso: boolean) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    let etapas = tarefa.etapas_processo || [];
+    if (ehProcesso && etapas.length === 0) {
+      etapas = [
+        {
+          id: `etp-${Date.now()}-1`,
+          titulo: '1. Solicitação e Recebimento de Documentos',
+          descricao: 'Requisitar documentação necessária junto ao cliente',
+          ordem: 1,
+          data_limite: tarefa.data_prazo_meta,
+          concluida: false,
+          arquivos: [],
+          cobrar_whatsapp: true,
+          configuracao_cobranca: {
+            habilitado: true,
+            telefones: ['19992803902'],
+            mensagem_padrao: `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para finalizarmos no prazo.`,
+            frequencia: 'Diariamente',
+            horario_envio: '08:00'
+          }
+        },
+        {
+          id: `etp-${Date.now()}-2`,
+          titulo: '2. Análise Técnica e Execução',
+          descricao: 'Processamento fiscal/contábil da rotina',
+          ordem: 2,
+          data_limite: tarefa.data_prazo_legal,
+          concluida: false,
+          arquivos: [],
+          cobrar_whatsapp: false
+        }
+      ];
+    }
+    updateTarefa(tarefaId, { eh_processo: ehProcesso, etapas_processo: etapas });
+  };
+
+  const adicionarEtapaProcesso = (tarefaId: string, etapaData: Omit<EtapaProcessoTarefa, 'id' | 'concluida'>) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const novaEtapa: EtapaProcessoTarefa = {
+      ...etapaData,
+      id: `etp-${Date.now()}`,
+      concluida: false,
+      arquivos: etapaData.arquivos || []
+    };
+    const etapasAtuais = tarefa.etapas_processo || [];
+    updateTarefa(tarefaId, {
+      eh_processo: true,
+      etapas_processo: [...etapasAtuais, novaEtapa]
+    });
+  };
+
+  const atualizarEtapaProcesso = (tarefaId: string, etapaId: string, updates: Partial<EtapaProcessoTarefa>) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const etapasAtuais = (tarefa.etapas_processo || []).map(e => e.id === etapaId ? { ...e, ...updates } : e);
+    updateTarefa(tarefaId, { etapas_processo: etapasAtuais });
+  };
+
+  const alternarConclusaoEtapa = (tarefaId: string, etapaId: string) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const agora = new Date().toLocaleString('pt-BR');
+    let nomeEtapa = '';
+    let virouConcluida = false;
+
+    const etapasAtuais = (tarefa.etapas_processo || []).map(e => {
+      if (e.id === etapaId) {
+        virouConcluida = !e.concluida;
+        nomeEtapa = e.titulo;
+        return {
+          ...e,
+          concluida: virouConcluida,
+          data_conclusao: virouConcluida ? agora : undefined
+        };
+      }
+      return e;
+    });
+
+    const textoLog = virouConcluida
+      ? `✅ Etapa "${nomeEtapa}" marcada como Concluída. Cobranças automáticas via WhatsApp das 08h foram INTERROMPIDAS.`
+      : `🔄 Etapa "${nomeEtapa}" reaberta. Cobranças automáticas via WhatsApp reativadas conforme agendamento.`;
+
+    adicionarComentarioTarefa(tarefaId, 'Robô de Processos GestUp', textoLog);
+    updateTarefa(tarefaId, { etapas_processo: etapasAtuais });
+  };
+
+  const excluirEtapaProcesso = (tarefaId: string, etapaId: string) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const etapasAtuais = (tarefa.etapas_processo || []).filter(e => e.id !== etapaId);
+    updateTarefa(tarefaId, { etapas_processo: etapasAtuais });
+  };
+
+  const anexarArquivoEtapa = (tarefaId: string, etapaId: string, arquivo: Omit<ArquivoEtapa, 'id' | 'data_upload'>) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const novoArquivo: ArquivoEtapa = {
+      ...arquivo,
+      id: `arq-${Date.now()}`,
+      data_upload: new Date().toISOString().split('T')[0]
+    };
+    const etapasAtuais = (tarefa.etapas_processo || []).map(e => {
+      if (e.id === etapaId) {
+        return { ...e, arquivos: [...(e.arquivos || []), novoArquivo] };
+      }
+      return e;
+    });
+    updateTarefa(tarefaId, { etapas_processo: etapasAtuais });
+  };
+
+  const removerArquivoEtapa = (tarefaId: string, etapaId: string, arquivoId: string) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const etapasAtuais = (tarefa.etapas_processo || []).map(e => {
+      if (e.id === etapaId) {
+        return { ...e, arquivos: (e.arquivos || []).filter(a => a.id !== arquivoId) };
+      }
+      return e;
+    });
+    updateTarefa(tarefaId, { etapas_processo: etapasAtuais });
+  };
+
+  const configurarCobrancaWhatsAppEtapa = (tarefaId: string, etapaId: string, config: ConfiguracaoCobrancaEtapa) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const etapasAtuais = (tarefa.etapas_processo || []).map(e => {
+      if (e.id === etapaId) {
+        return {
+          ...e,
+          cobrar_whatsapp: config.habilitado,
+          configuracao_cobranca: config
+        };
+      }
+      return e;
+    });
+    updateTarefa(tarefaId, { etapas_processo: etapasAtuais });
+  };
+
+  const dispararCobrancaEtapaWhatsApp = (tarefaId: string, etapaId: string) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const etapa = (tarefa.etapas_processo || []).find(e => e.id === etapaId);
+    if (!etapa || !etapa.configuracao_cobranca) return;
+
+    const cfg = etapa.configuracao_cobranca;
+    const cliente = clientes.find(c => c.id === tarefa.cliente_id);
+    const nomeCliente = cliente?.responsavel || tarefa.cliente_nome.split(' ')[0] || 'Cliente';
+
+    let textoMsg = cfg.mensagem_padrao
+      .replace(/\{cliente\}/g, nomeCliente)
+      .replace(/\{empresa\}/g, tarefa.cliente_nome)
+      .replace(/\{etapa\}/g, etapa.titulo)
+      .replace(/\{data_limite\}/g, etapa.data_limite || tarefa.data_prazo_meta);
+
+    cfg.telefones.forEach((tel, idx) => {
+      if (tel && tel.trim().length > 6) {
+        enviarMensagemWhatsApp(
+          'Cliente',
+          `${tarefa.cliente_nome} (Contato ${idx + 1})`,
+          tel,
+          'Cobrança Atraso',
+          `🔔 *Lembrete de Etapa - fin.up (08:00h)*\n\n${textoMsg}`,
+          etapa.id
+        );
+      }
+    });
+
+    const agora = new Date().toLocaleString('pt-BR');
+    const etapasAtualizadas = (tarefa.etapas_processo || []).map(e => {
+      if (e.id === etapaId && e.configuracao_cobranca) {
+        return {
+          ...e,
+          configuracao_cobranca: {
+            ...e.configuracao_cobranca,
+            ultimo_envio: agora,
+            total_envios: (e.configuracao_cobranca.total_envios || 0) + 1
+          }
+        };
+      }
+      return e;
+    });
+    updateTarefa(tarefaId, { etapas_processo: etapasAtualizadas });
   };
 
   // ================= CLIENTES & AUDITORIA =================
@@ -904,6 +1183,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     enviarMensagemWhatsApp('Cliente', cliente.nome, cliente.whatsapp || cliente.telefone, 'Documento Pendente', msg, cliente.id);
   };
 
+  const conectarWhatsAppSimulado = (numero: string) => {
+    const agora = new Date().toLocaleString('pt-BR');
+    setWhatsAppConfig(prev => ({
+      ...prev,
+      conectado: true,
+      status: 'CONNECTED',
+      numero_conectado: numero,
+      ultima_sincronizacao: agora
+    }));
+  };
+
+  const desconectarWhatsApp = () => {
+    setWhatsAppConfig(prev => ({
+      ...prev,
+      conectado: false,
+      status: 'DISCONNECTED',
+      numero_conectado: undefined
+    }));
+  };
+
+  const gerarQRCodeWhatsApp = () => {
+    setWhatsAppConfig(prev => ({
+      ...prev,
+      status: 'QRCODE',
+      conectado: false
+    }));
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -931,6 +1238,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         concluirTarefa,
         prorrogarTarefa,
         adicionarComentarioTarefa,
+        toggleProcessoTarefa,
+        adicionarEtapaProcesso,
+        atualizarEtapaProcesso,
+        alternarConclusaoEtapa,
+        excluirEtapaProcesso,
+        anexarArquivoEtapa,
+        removerArquivoEtapa,
+        configurarCobrancaWhatsAppEtapa,
+        dispararCobrancaEtapaWhatsApp,
+        conectarWhatsAppSimulado,
+        desconectarWhatsApp,
+        gerarQRCodeWhatsApp,
         addCliente,
         updateCliente,
         alternarStatusCliente,

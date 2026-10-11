@@ -61,6 +61,9 @@ interface AppContextType {
   setActiveTab: (tab: string) => void;
   activeModule: 'operacional' | 'crm' | 'automacoes' | 'configuracoes';
   setActiveModule: (mod: 'operacional' | 'crm' | 'automacoes' | 'configuracoes') => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
+  toggleSidebar: () => void;
 
   // Ações de Tarefas
   addTarefa: (tarefa: Omit<Tarefa, 'id' | 'created_at'>) => void;
@@ -360,6 +363,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // A TELA PRINCIPAL AGORA É O DASHBOARD (Power BI)
   const [activeModule, setActiveModule] = useState<'operacional' | 'crm' | 'automacoes' | 'configuracoes'>('operacional');
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+
+  // Carregar preferência do menu recolhível
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('gestup_sidebar_collapsed');
+      if (saved !== null) {
+        setSidebarCollapsed(saved === 'true');
+      }
+    } catch {}
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('gestup_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Carregar do localStorage com chave v2 e migração inteligente
   useEffect(() => {
@@ -1254,6 +1278,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setActiveTab,
         activeModule,
         setActiveModule,
+        sidebarCollapsed,
+        setSidebarCollapsed,
+        toggleSidebar,
         addTarefa,
         updateTarefa,
         deleteTarefa,

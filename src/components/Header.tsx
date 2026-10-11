@@ -7,7 +7,9 @@ import {
   Plus,
   Send,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -20,7 +22,9 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
     activeTab,
     tarefas,
     dispararResumoMatinalEquipe,
-    redefinirDadosPadrao
+    redefinirDadosPadrao,
+    sidebarCollapsed,
+    toggleSidebar
   } = useApp();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -84,10 +88,24 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
       )}
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        {/* Título & Descrição */}
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{title}</h1>
-          <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
+        {/* Título & Descrição com botão de toggle */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleSidebar}
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-all border border-slate-200/80 hover:border-slate-300 shadow-xs shrink-0"
+            title={sidebarCollapsed ? 'Expandir Menu Lateral (Alt+B)' : 'Recolher Menu Lateral (Alt+B)'}
+            aria-label={sidebarCollapsed ? 'Expandir Menu Lateral' : 'Recolher Menu Lateral'}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen className="w-4 h-4 text-brand-blue" />
+            ) : (
+              <PanelLeftClose className="w-4 h-4" />
+            )}
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">{title}</h1>
+            <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
+          </div>
         </div>
 
         {/* Ações & Indicadores Inteligentes */}

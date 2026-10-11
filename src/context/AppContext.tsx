@@ -1150,6 +1150,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       referencia_id: referenciaId
     };
     setWhatsAppMensagens(prev => [novaMensagem, ...prev]);
+
+    // Integração Real com Evolution API (envio imediato para o WhatsApp)
+    if (whatsAppConfig.api_url && whatsAppConfig.api_key && whatsAppConfig.nome_instancia) {
+      try {
+        const cleanNumber = (telefone || '').replace(/\D/g, '');
+        if (cleanNumber.length >= 10) {
+          fetch(`${whatsAppConfig.api_url}/message/sendText/${whatsAppConfig.nome_instancia}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': whatsAppConfig.api_key
+            },
+            body: JSON.stringify({
+              number: cleanNumber,
+              text: texto,
+              delay: 1200
+            })
+          }).catch(err => console.warn('Evolution API disparado em background:', err));
+        }
+      } catch (err) {
+        console.warn('Erro fetch Evolution API:', err);
+      }
+    }
   };
 
   const atualizarWhatsAppConfig = (updates: Partial<WhatsAppConfig>) => {

@@ -36,9 +36,9 @@ export function WhatsAppCentralView() {
   );
 
   // Estados de Configuração Real
-  const [apiUrl, setApiUrl] = useState('https://api.whatsapp.suaconsultoria.com.br');
-  const [apiKey, setApiKey] = useState('B6D711FCDE4D4FD59365441E08497E40');
-  const [nomeInstancia, setNomeInstancia] = useState('finup-oficial');
+  const [apiUrl, setApiUrl] = useState('https://evolution-api-production-ed7c.up.railway.app');
+  const [apiKey, setApiKey] = useState('e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a');
+  const [nomeInstancia, setNomeInstancia] = useState('gestup');
   const [feedbackSalvo, setFeedbackSalvo] = useState(false);
   const [feedbackEnvio, setFeedbackEnvio] = useState(false);
 

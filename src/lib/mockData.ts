@@ -4175,13 +4175,17 @@ export const initialWhatsAppConfig: WhatsAppConfig = {
   conectado: true,
   status: 'CONNECTED',
   numero_conectado: '+55 (19) 99987-0840',
-  nome_instancia: 'finup-oficial-producao',
+  nome_instancia: 'gestup',
   api_provider: 'Evolution API',
   auto_enviar_manha: true,
   hora_envio_manha: '08:30',
   lembrete_dias_antes: 1,
   cobranca_atraso_ativa: true,
-  cobranca_documentos_ativa: true
+  cobranca_documentos_ativa: true,
+  api_url: 'https://evolution-api-production-ed7c.up.railway.app',
+  api_key: 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+  instancia_id: '737a71b4-7795-45ad-99e5-7105c9ad3ecf',
+  ultima_sincronizacao: 'Hoje às 08:00'
 };
 
 export const initialWhatsAppMensagens: WhatsAppMensagem[] = [

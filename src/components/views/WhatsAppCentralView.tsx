@@ -37,7 +37,7 @@ export function WhatsAppCentralView() {
 
   // Estados de Configuração Real
   const [apiUrl, setApiUrl] = useState('https://evolution-api-production-ed7c.up.railway.app');
-  const [apiKey, setApiKey] = useState('e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a');
+  const [apiKey, setApiKey] = useState('68A885CD-5F29-4269-949C-8AEB4D149393');
   const [nomeInstancia, setNomeInstancia] = useState('gestup');
   const [feedbackSalvo, setFeedbackSalvo] = useState(false);
   const [feedbackEnvio, setFeedbackEnvio] = useState(false);
@@ -56,7 +56,7 @@ export function WhatsAppCentralView() {
   const handleEnviarSimulacao = (e: React.FormEvent) => {
     e.preventDefault();
     const nome = destinatarioTipo === 'Colaborador' ? selectedColab : selectedCliente;
-    const fone = telefoneManual || (destinatarioTipo === 'Colaborador' ? '5519999870840' : '5519994910591');
+    const fone = telefoneManual || (destinatarioTipo === 'Colaborador' ? '5519992080639' : '5519994910591');
 
     enviarMensagemWhatsApp(
       destinatarioTipo,
@@ -427,7 +427,7 @@ export function WhatsAppCentralView() {
                   <label className="block font-semibold text-slate-700 mb-1">Telefone WhatsApp (Opcional)</label>
                   <input
                     type="text"
-                    placeholder="(19) 99987-0840"
+                    placeholder="(19) 99208-0639"
                     value={telefoneManual}
                     onChange={e => setTelefoneManual(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200"

@@ -522,7 +522,7 @@ export function ClientesView() {
                   <label className="block font-semibold text-slate-700 mb-1">WhatsApp Principal</label>
                   <input
                     type="text"
-                    placeholder="5519999870840"
+                    placeholder="5519992080639"
                     value={telefone}
                     onChange={e => setTelefone(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200"

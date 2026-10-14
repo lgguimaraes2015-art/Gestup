@@ -55,12 +55,12 @@ export function ConfiguracoesView() {
   const [toastFeedback, setToastFeedback] = useState<string | null>(null);
 
   // Estados de Teste e Conexão WhatsApp
-  const [testeTelefone, setTesteTelefone] = useState('5519999870840');
+  const [testeTelefone, setTesteTelefone] = useState('5519992080639');
   const [testeMensagem, setTesteMensagem] = useState('Olá! Esta é uma notificação de teste enviada pela plataforma fin.up GestUp para validar a integração do WhatsApp.');
-  const [numeroParaConectar, setNumeroParaConectar] = useState('+55 (19) 99987-0840');
+  const [numeroParaConectar, setNumeroParaConectar] = useState('+55 (19) 99208-0639');
   const [mostrarConfigAvancada, setMostrarConfigAvancada] = useState(false);
   const [apiUrlInput, setApiUrlInput] = useState(whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app');
-  const [apiKeyInput, setApiKeyInput] = useState(whatsAppConfig.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a');
+  const [apiKeyInput, setApiKeyInput] = useState(whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393');
   const [instanciaInput, setInstanciaInput] = useState(whatsAppConfig.nome_instancia || 'gestup');
   const [salvandoCredenciais, setSalvandoCredenciais] = useState(false);
 
@@ -357,7 +357,7 @@ export function ConfiguracoesView() {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
                     <div className="p-3 bg-white rounded-xl border border-slate-200">
                       <span className="text-slate-400 font-bold uppercase text-[10px] block">Número Vinculado</span>
-                      <p className="font-extrabold text-slate-900 text-sm mt-1">{whatsAppConfig.numero_conectado || '+55 (19) 99987-0840'}</p>
+                      <p className="font-extrabold text-slate-900 text-sm mt-1">{whatsAppConfig.numero_conectado || '+55 (19) 99208-0639'}</p>
                       <span className="text-[10px] text-brand-green font-semibold">✓ Linha Autorizada</span>
                     </div>
 
@@ -450,7 +450,7 @@ export function ConfiguracoesView() {
                         type="text"
                         value={numeroParaConectar}
                         onChange={e => setNumeroParaConectar(e.target.value)}
-                        placeholder="+55 (19) 99987-0840"
+                        placeholder="+55 (19) 99208-0639"
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 text-xs"
                       />
                     </div>
@@ -652,7 +652,7 @@ export function ConfiguracoesView() {
                     type="password"
                     value={apiKeyInput}
                     onChange={e => setApiKeyInput(e.target.value)}
-                    placeholder="e74e3e545d217c1598f490d8..."
+                    placeholder="68A885CD-5F29-4269-949C..."
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-mono text-xs"
                   />
                 </div>
@@ -703,7 +703,7 @@ export function ConfiguracoesView() {
                     type="text"
                     value={testeTelefone}
                     onChange={e => setTesteTelefone(e.target.value)}
-                    placeholder="5519999870840"
+                    placeholder="5519992080639"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800"
                   />
                 </div>
@@ -841,7 +841,7 @@ export function ConfiguracoesView() {
                   <input
                     type="text"
                     required
-                    placeholder="5519999870840"
+                    placeholder="5519992080639"
                     value={telefone}
                     onChange={e => setTelefone(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200"

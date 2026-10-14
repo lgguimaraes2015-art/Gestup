@@ -2168,7 +2168,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                     <input
                       type="text"
                       required
-                      placeholder="Ex: 5519999870840"
+                      placeholder="Ex: 5519992080639"
                       value={cobrancaSuspensa.telefones[0] || ''}
                       onChange={e => {
                         const val = e.target.value;

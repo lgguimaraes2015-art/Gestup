@@ -55,8 +55,8 @@ export const initialClientes: Cliente[] = [
     "nome": "THE BLACK BURGUER",
     "cnpj_cpf": "37.447.460/0001-72",
     "email": "adm.theblackburguer@outlook.com",
-    "telefone": "+55 19 99987-0840",
-    "whatsapp": "5519999870840",
+    "telefone": "+55 19 99208-0639",
+    "whatsapp": "5519992080639",
     "regime_tributario": "Simples Nacional",
     "status": "Ativo",
     "responsavel": "Rodrigo e Jaksson",
@@ -345,8 +345,8 @@ export const initialColaboradores: Colaborador[] = [
     "cargo": "Sócio / Consultor Financeiro & Tributário",
     "departamento": "Fiscal",
     "status": "Ativo",
-    "telefone": "(19) 99987-0840",
-    "whatsapp": "5519999870840",
+    "telefone": "(19) 99208-0639",
+    "whatsapp": "5519992080639",
     "data_admissao": "2024-01-01"
   },
   {
@@ -378,8 +378,8 @@ export const initialColaboradores: Colaborador[] = [
     "cargo": "Consultores Comerciais & Atendimento",
     "departamento": "Administrativo",
     "status": "Ativo",
-    "telefone": "(19) 99987-0840",
-    "whatsapp": "5519999870840",
+    "telefone": "(19) 99208-0639",
+    "whatsapp": "5519992080639",
     "data_admissao": "2026-02-01"
   }
 ];
@@ -3856,8 +3856,8 @@ export const initialLeads: CRMLead[] = [
     "nome": "The Black Burguer",
     "empresa": "The Black Burguer",
     "cpf_cnpj": "37.447.460/0001-72",
-    "telefone": "19 99987-0840",
-    "whatsapp": "19999870840",
+    "telefone": "19 99208-0639",
+    "whatsapp": "19992080639",
     "email": "adm.theblackburguer@gmail.com",
     "origem": "Parceiro",
     "servico_interesse": "Departamento Pessoal",
@@ -4174,7 +4174,7 @@ export const initialProcedimentoTemplates: CRMProcedimentoTemplate[] = [
 export const initialWhatsAppConfig: WhatsAppConfig = {
   conectado: true,
   status: 'CONNECTED',
-  numero_conectado: '+55 (19) 99987-0840',
+  numero_conectado: '+55 (19) 99208-0639',
   nome_instancia: 'gestup',
   api_provider: 'Evolution API',
   auto_enviar_manha: true,
@@ -4183,7 +4183,7 @@ export const initialWhatsAppConfig: WhatsAppConfig = {
   cobranca_atraso_ativa: true,
   cobranca_documentos_ativa: true,
   api_url: 'https://evolution-api-production-ed7c.up.railway.app',
-  api_key: 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+  api_key: '68A885CD-5F29-4269-949C-8AEB4D149393',
   instancia_id: '737a71b4-7795-45ad-99e5-7105c9ad3ecf',
   ultima_sincronizacao: 'Hoje às 08:00'
 };
@@ -4193,7 +4193,7 @@ export const initialWhatsAppMensagens: WhatsAppMensagem[] = [
     id: 'msg-1',
     destinatario_tipo: 'Colaborador',
     destinatario_nome: 'Guilherme',
-    telefone: '5519999870840',
+    telefone: '5519992080639',
     tipo_notificacao: 'Resumo Diário',
     mensagem: '☀️ Bom dia, Guilherme! Você possui tarefas pendentes e prazos no GestUp para The Black Burguer e Adega do Chris. Ótimo trabalho!',
     status: 'Entregue',
@@ -4203,7 +4203,7 @@ export const initialWhatsAppMensagens: WhatsAppMensagem[] = [
     id: 'msg-2',
     destinatario_tipo: 'Cliente',
     destinatario_nome: 'THE BLACK BURGUER',
-    telefone: '5519999870840',
+    telefone: '5519992080639',
     tipo_notificacao: 'Documento Pendente',
     mensagem: 'Olá Jaksson e Rodrigo (The Black Burguer)! Tudo bem? Passando para lembrar do envio das notas fiscais e extratos para o fechamento deste mês na fin.up.',
     status: 'Lida',
@@ -4309,7 +4309,7 @@ export const initialHonorarios: HonorarioItem[] = [
     cliente_id: '6a722218cec951fb77d80bb6',
     cliente_nome: 'THE BLACK BURGUER',
     contato_nome: 'Rodrigo / Jaksson',
-    contato_telefone: '5519999870840',
+    contato_telefone: '5519992080639',
     competencia: '10/2026',
     valor: 1900,
     data_vencimento: '2026-10-10',
@@ -4550,7 +4550,7 @@ export const initialHonorarios: HonorarioItem[] = [
     cliente_id: '6a722218cec951fb77d80bb6',
     cliente_nome: 'THE BLACK BURGUER',
     contato_nome: 'Rodrigo / Jaksson',
-    contato_telefone: '5519999870840',
+    contato_telefone: '5519992080639',
     competencia: '09/2026', // Origem: Setembro/2026
     valor: 1900,
     data_vencimento: '2026-09-10',

@@ -257,7 +257,7 @@ const enrichTarefa = (t: Tarefa): Tarefa => {
           cobrar_whatsapp: true,
           configuracao_cobranca: {
             habilitado: true,
-            telefones: ['19992803902', '19999870840'],
+            telefones: ['19992803902', '19992080639'],
             mensagem_padrao: 'Olá {cliente}! Lembramos que a etapa *{etapa}* referente à empresa *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar a validação para darmos continuidade ao processo.',
             frequencia: 'Diariamente',
             horario_envio: '08:00',
@@ -415,11 +415,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const savedWhatsApp = localStorage.getItem('gestup_v2_whatsapp_config');
       if (savedWhatsApp) {
         const parsed = JSON.parse(savedWhatsApp);
+        const numeroCorrigido = (!parsed.numero_conectado || parsed.numero_conectado.includes('99987-0840') || parsed.numero_conectado.includes('999870840'))
+          ? '+55 (19) 99208-0639'
+          : parsed.numero_conectado;
+        const keyCorrigida = (!parsed.api_key || parsed.api_key.includes('e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a'))
+          ? '68A885CD-5F29-4269-949C-8AEB4D149393'
+          : parsed.api_key;
         setWhatsAppConfig(prev => ({
           ...prev,
           ...parsed,
+          numero_conectado: numeroCorrigido,
           api_url: parsed.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
-          api_key: parsed.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+          api_key: keyCorrigida,
           nome_instancia: parsed.nome_instancia || 'gestup'
         }));
       }
@@ -435,7 +442,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             apiUrl: whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
-            apiKey: whatsAppConfig.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+            apiKey: whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393',
             instanceName: whatsAppConfig.nome_instancia || 'gestup'
           })
         });
@@ -446,6 +453,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               ...prev,
               conectado: true,
               status: 'CONNECTED' as const,
+              numero_conectado: data.ownerFormatted || prev.numero_conectado || '+55 (19) 99208-0639',
               ultima_sincronizacao: new Date().toLocaleString('pt-BR')
             };
             try { localStorage.setItem('gestup_v2_whatsapp_config', JSON.stringify(updated)); } catch {}
@@ -1235,7 +1243,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           number: cleanNumber,
           text: texto,
           apiUrl: whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
-          apiKey: whatsAppConfig.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+          apiKey: whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393',
           instanceName: whatsAppConfig.nome_instancia || 'gestup'
         })
       });
@@ -1271,7 +1279,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           apiUrl: whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
-          apiKey: whatsAppConfig.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+          apiKey: whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393',
           instanceName: whatsAppConfig.nome_instancia || 'gestup'
         })
       });
@@ -1280,6 +1288,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         atualizarWhatsAppConfig({
           conectado: true,
           status: 'CONNECTED',
+          numero_conectado: data.ownerFormatted || whatsAppConfig.numero_conectado || '+55 (19) 99208-0639',
           ultima_sincronizacao: new Date().toLocaleString('pt-BR')
         });
         return 'open';

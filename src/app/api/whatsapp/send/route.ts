@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
       number,
       text,
       apiUrl = 'https://evolution-api-production-ed7c.up.railway.app',
-      apiKey = 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+      apiKey = '68A885CD-5F29-4269-949C-8AEB4D149393',
       instanceName = 'gestup'
     } = body;
 

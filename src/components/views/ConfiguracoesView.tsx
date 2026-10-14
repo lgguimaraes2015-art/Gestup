@@ -30,7 +30,8 @@ import {
   HelpCircle,
   Check,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Key
 } from 'lucide-react';
 
 export function ConfiguracoesView() {
@@ -44,6 +45,8 @@ export function ConfiguracoesView() {
     conectarWhatsAppSimulado,
     desconectarWhatsApp,
     gerarQRCodeWhatsApp,
+    verificarStatusWhatsAppReal,
+    executarReguaManha08h,
     tarefas,
     clientes
   } = useApp();
@@ -56,6 +59,10 @@ export function ConfiguracoesView() {
   const [testeMensagem, setTesteMensagem] = useState('Olá! Esta é uma notificação de teste enviada pela plataforma fin.up GestUp para validar a integração do WhatsApp.');
   const [numeroParaConectar, setNumeroParaConectar] = useState('+55 (19) 99987-0840');
   const [mostrarConfigAvancada, setMostrarConfigAvancada] = useState(false);
+  const [apiUrlInput, setApiUrlInput] = useState(whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app');
+  const [apiKeyInput, setApiKeyInput] = useState(whatsAppConfig.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a');
+  const [instanciaInput, setInstanciaInput] = useState(whatsAppConfig.nome_instancia || 'gestup');
+  const [salvandoCredenciais, setSalvandoCredenciais] = useState(false);
 
   // Modal Novo Colaborador
   const [modalNovo, setModalNovo] = useState(false);
@@ -378,7 +385,25 @@ export function ConfiguracoesView() {
                       Última sincronização com a rede: <strong>{whatsAppConfig.ultima_sincronizacao || 'Hoje às 08:00'}</strong>
                     </span>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setToastFeedback('🔍 Verificando status da sessão no Railway...');
+                          const st = await verificarStatusWhatsAppReal();
+                          if (st === 'open') {
+                            setToastFeedback('🟢 WhatsApp Conectado e Operacional no Railway! Sessão: ABERTA');
+                          } else {
+                            setToastFeedback(`⚠️ Status atual: ${st}. Se necessário, reconecte o QR Code.`);
+                          }
+                          setTimeout(() => setToastFeedback(null), 5000);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Testar Conexão em Tempo Real</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => {
@@ -492,8 +517,25 @@ export function ConfiguracoesView() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-semibold text-slate-600">Disparos Automáticos:</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setToastFeedback('⏳ Disparando régua matinal para as etapas pendentes...');
+                      const res = await executarReguaManha08h();
+                      if (res.totalDisparados === 0) {
+                        setToastFeedback('ℹ️ Nenhuma etapa com cobrança pendente para disparo neste momento.');
+                      } else {
+                        setToastFeedback(`🎉 Sucesso! ${res.totalDisparados} mensagem(ns) disparada(s) via WhatsApp!`);
+                      }
+                      setTimeout(() => setToastFeedback(null), 5000);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs flex items-center gap-1.5 transition-all"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Executar Régua das 08:00h Agora</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -560,6 +602,86 @@ export function ConfiguracoesView() {
               </div>
             </div>
 
+            {/* CREDENCIAIS DA EVOLUTION API (RAILWAY) */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-brand-blue/10 text-brand-blue flex items-center justify-center">
+                    <Key className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900">Credenciais da API de WhatsApp (Railway)</h3>
+                    <p className="text-xs text-slate-500">
+                      Parâmetros da sua Evolution API na nuvem para envio de mensagens reais
+                    </p>
+                  </div>
+                </div>
+                {salvandoCredenciais && (
+                  <span className="text-xs font-bold text-brand-green bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                    ✓ Credenciais Salvas!
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">URL da API (Endpoint)</label>
+                  <input
+                    type="text"
+                    value={apiUrlInput}
+                    onChange={e => setApiUrlInput(e.target.value)}
+                    placeholder="https://evolution-api-production-ed7c.up.railway.app"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Nome da Instância</label>
+                  <input
+                    type="text"
+                    value={instanciaInput}
+                    onChange={e => setInstanciaInput(e.target.value)}
+                    placeholder="gestup"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">API Key / Chave de Acesso</label>
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={e => setApiKeyInput(e.target.value)}
+                    placeholder="e74e3e545d217c1598f490d8..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    atualizarWhatsAppConfig({
+                      api_url: apiUrlInput.trim(),
+                      api_key: apiKeyInput.trim(),
+                      nome_instancia: instanciaInput.trim()
+                    });
+                    setSalvandoCredenciais(true);
+                    setToastFeedback('💾 Credenciais da Evolution API salvas com sucesso!');
+                    setTimeout(() => {
+                      setSalvandoCredenciais(false);
+                      setToastFeedback(null);
+                    }, 3000);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Salvar Credenciais da API</span>
+                </button>
+              </div>
+            </div>
+
             {/* 4. SANDBOX / TESTE DE DISPARO IMEDIATO */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle space-y-4">
               <div className="flex items-center gap-3">
@@ -600,14 +722,19 @@ export function ConfiguracoesView() {
               <div className="flex justify-end pt-1">
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!testeTelefone) {
                       alert('Digite o número para o envio.');
                       return;
                     }
-                    enviarMensagemWhatsApp('Cliente', 'Teste Manual', testeTelefone, 'Lembrete Prazo', testeMensagem);
-                    setToastFeedback(`📲 Mensagem de teste disparada com sucesso para ${testeTelefone}!`);
-                    setTimeout(() => setToastFeedback(null), 4000);
+                    setToastFeedback('⏳ Enviando mensagem para o WhatsApp via Railway...');
+                    const ok = await enviarMensagemWhatsApp('Cliente', 'Teste Manual', testeTelefone, 'Lembrete Prazo', testeMensagem);
+                    if (ok) {
+                      setToastFeedback(`🎉 Mensagem ENTREGUE com sucesso para ${testeTelefone}! Verifique seu celular.`);
+                    } else {
+                      setToastFeedback(`⚠️ O envio foi disparado. Se não chegar em instantes, verifique o número ou a sessão.`);
+                    }
+                    setTimeout(() => setToastFeedback(null), 5000);
                   }}
                   className="px-5 py-2.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition-all"
                 >

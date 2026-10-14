@@ -93,10 +93,24 @@ interface AppContextType {
   configurarCobrancaWhatsAppEtapa: (tarefaId: string, etapaId: string, config: ConfiguracaoCobrancaEtapa) => void;
   dispararCobrancaEtapaWhatsApp: (tarefaId: string, etapaId: string) => void;
 
-  // Ações de Conexão WhatsApp (NOVO)
+  // Ações de Conexão WhatsApp & Automação
   conectarWhatsAppSimulado: (numero: string) => void;
   desconectarWhatsApp: () => void;
   gerarQRCodeWhatsApp: () => void;
+  verificarStatusWhatsAppReal: () => Promise<string>;
+  executarReguaManha08h: () => Promise<{ totalDisparados: number; detalhes: string[] }>;
+  atualizarWhatsAppConfig: (updates: Partial<WhatsAppConfig>) => void;
+  enviarMensagemWhatsApp: (
+    destinatarioTipo: WhatsAppMensagem['destinatario_tipo'],
+    destinatarioNome: string,
+    telefone: string,
+    tipoNotificacao: WhatsAppMensagem['tipo_notificacao'],
+    texto: string,
+    referenciaId?: string
+  ) => Promise<boolean>;
+  dispararResumoMatinalEquipe: () => void;
+  dispararCobrancaTarefa: (tarefaId: string) => void;
+  dispararCobrancaDocumentosCliente: (clienteId: string) => void;
 
   // Ações de Clientes & Auditoria
   addCliente: (cliente: Omit<Cliente, 'id' | 'created_at'>) => void;
@@ -146,19 +160,6 @@ interface AppContextType {
   updateLead: (id: string, updates: Partial<CRMLead>) => void;
   converterLeadEmCliente: (leadId: string) => void;
 
-  // Ações de WhatsApp
-  enviarMensagemWhatsApp: (
-    destinatarioTipo: 'Colaborador' | 'Cliente' | 'Lead',
-    destinatarioNome: string,
-    telefone: string,
-    tipoNotificacao: WhatsAppMensagem['tipo_notificacao'],
-    texto: string,
-    referenciaId?: string
-  ) => void;
-  atualizarWhatsAppConfig: (updates: Partial<WhatsAppConfig>) => void;
-  dispararResumoMatinalEquipe: () => void;
-  dispararCobrancaTarefa: (tarefaId: string) => void;
-  dispararCobrancaDocumentosCliente: (clienteId: string) => void;
   redefinirDadosPadrao: () => void;
 }
 
@@ -411,8 +412,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (savedReceber) setContasReceber(JSON.parse(savedReceber));
       const savedHonorarios = localStorage.getItem('gestup_v2_honorarios');
       if (savedHonorarios) setHonorarios(JSON.parse(savedHonorarios));
+      const savedWhatsApp = localStorage.getItem('gestup_v2_whatsapp_config');
+      if (savedWhatsApp) {
+        const parsed = JSON.parse(savedWhatsApp);
+        setWhatsAppConfig(prev => ({
+          ...prev,
+          ...parsed,
+          api_url: parsed.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
+          api_key: parsed.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+          nome_instancia: parsed.nome_instancia || 'gestup'
+        }));
+      }
     } catch {}
   }, []);
+
+  // Sincroniza o status do WhatsApp no Railway na inicialização
+  useEffect(() => {
+    const syncStatus = async () => {
+      try {
+        const res = await fetch('/api/whatsapp/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiUrl: whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
+            apiKey: whatsAppConfig.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+            instanceName: whatsAppConfig.nome_instancia || 'gestup'
+          })
+        });
+        const data = await res.json();
+        if (data?.success && data.state === 'open') {
+          setWhatsAppConfig(prev => {
+            const updated = {
+              ...prev,
+              conectado: true,
+              status: 'CONNECTED' as const,
+              ultima_sincronizacao: new Date().toLocaleString('pt-BR')
+            };
+            try { localStorage.setItem('gestup_v2_whatsapp_config', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
+      } catch (err) {
+        console.warn('Verificação de status do WhatsApp:', err);
+      }
+    };
+    syncStatus();
+  }, [whatsAppConfig.api_url, whatsAppConfig.api_key, whatsAppConfig.nome_instancia]);
 
   const saveTarefas = (newTarefas: Tarefa[]) => {
     setTarefas(newTarefas);
@@ -1154,53 +1199,144 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ================= WHATSAPP =================
-  const enviarMensagemWhatsApp = (
+  const enviarMensagemWhatsApp = async (
     destinatarioTipo: 'Colaborador' | 'Cliente' | 'Lead',
     destinatarioNome: string,
     telefone: string,
     tipoNotificacao: WhatsAppMensagem['tipo_notificacao'],
     texto: string,
     referenciaId?: string
-  ) => {
+  ): Promise<boolean> => {
+    let cleanNumber = (telefone || '').replace(/\D/g, '');
+    if (cleanNumber.length === 10 || cleanNumber.length === 11) {
+      cleanNumber = `55${cleanNumber}`;
+    }
+
     const novaMensagem: WhatsAppMensagem = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       destinatario_tipo: destinatarioTipo,
       destinatario_nome: destinatarioNome,
-      telefone: telefone.replace(/\D/g, '') || '5511999999999',
+      telefone: cleanNumber || '5511999999999',
       tipo_notificacao: tipoNotificacao,
       mensagem: texto,
       status: 'Entregue',
       data_envio: new Date().toLocaleString('pt-BR'),
       referencia_id: referenciaId
     };
-    setWhatsAppMensagens(prev => [novaMensagem, ...prev]);
 
-    // Integração Real com Evolution API (envio imediato para o WhatsApp)
-    if (whatsAppConfig.api_url && whatsAppConfig.api_key && whatsAppConfig.nome_instancia) {
-      try {
-        const cleanNumber = (telefone || '').replace(/\D/g, '');
-        if (cleanNumber.length >= 10) {
-          fetch(`${whatsAppConfig.api_url}/message/sendText/${whatsAppConfig.nome_instancia}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': whatsAppConfig.api_key
-            },
-            body: JSON.stringify({
-              number: cleanNumber,
-              text: texto,
-              delay: 1200
-            })
-          }).catch(err => console.warn('Evolution API disparado em background:', err));
-        }
-      } catch (err) {
-        console.warn('Erro fetch Evolution API:', err);
+    let sucessoEnvio = false;
+
+    // Disparo real via API Route do Next.js (Server-side, zero problemas de CORS)
+    try {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          number: cleanNumber,
+          text: texto,
+          apiUrl: whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
+          apiKey: whatsAppConfig.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+          instanceName: whatsAppConfig.nome_instancia || 'gestup'
+        })
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.success) {
+        sucessoEnvio = true;
+        novaMensagem.status = 'Entregue';
+      } else {
+        console.warn('[WhatsApp] Retorno API não foi sucesso:', data?.error);
       }
+    } catch (err) {
+      console.error('[WhatsApp] Falha ao chamar rota /api/whatsapp/send:', err);
     }
+
+    setWhatsAppMensagens(prev => [novaMensagem, ...prev]);
+    return sucessoEnvio;
   };
 
   const atualizarWhatsAppConfig = (updates: Partial<WhatsAppConfig>) => {
-    setWhatsAppConfig(prev => ({ ...prev, ...updates }));
+    setWhatsAppConfig(prev => {
+      const merged = { ...prev, ...updates };
+      try {
+        localStorage.setItem('gestup_v2_whatsapp_config', JSON.stringify(merged));
+      } catch {}
+      return merged;
+    });
+  };
+
+  const verificarStatusWhatsAppReal = async (): Promise<string> => {
+    try {
+      const res = await fetch('/api/whatsapp/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiUrl: whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
+          apiKey: whatsAppConfig.api_key || 'e74e3e545d217c1598f490d802b2ba61cff2a937a2f532cc987cb745f133a28a',
+          instanceName: whatsAppConfig.nome_instancia || 'gestup'
+        })
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.success && data?.state === 'open') {
+        atualizarWhatsAppConfig({
+          conectado: true,
+          status: 'CONNECTED',
+          ultima_sincronizacao: new Date().toLocaleString('pt-BR')
+        });
+        return 'open';
+      } else {
+        return data?.state || 'disconnected';
+      }
+    } catch (err) {
+      console.warn('Erro ao checar status:', err);
+      return 'error';
+    }
+  };
+
+  const executarReguaManha08h = async (): Promise<{ totalDisparados: number; detalhes: string[] }> => {
+    let total = 0;
+    const detalhes: string[] = [];
+
+    for (const tarefa of tarefas) {
+      if (tarefa.status === 'Concluída') continue;
+      const etapasPendentes = (tarefa.etapas_processo || []).filter(
+        e => !e.concluida && e.cobrar_whatsapp && e.configuracao_cobranca
+      );
+
+      for (const etapa of etapasPendentes) {
+        const cfg = etapa.configuracao_cobranca!;
+        const cliente = clientes.find(c => c.id === tarefa.cliente_id);
+        const nomeCliente = cliente?.responsavel || tarefa.cliente_nome.split(' ')[0] || 'Cliente';
+
+        let textoMsg = cfg.mensagem_padrao
+          .replace(/\{cliente\}/g, nomeCliente)
+          .replace(/\{empresa\}/g, tarefa.cliente_nome)
+          .replace(/\{etapa\}/g, etapa.titulo)
+          .replace(/\{data_limite\}/g, etapa.data_limite || tarefa.data_prazo_meta);
+
+        for (const tel of cfg.telefones) {
+          if (tel && tel.trim().length >= 8) {
+            await enviarMensagemWhatsApp(
+              'Cliente',
+              tarefa.cliente_nome,
+              tel,
+              'Cobrança Atraso',
+              `🔔 *Lembrete de Etapa - fin.up (08:00h)*\n\n${textoMsg}`,
+              etapa.id
+            );
+            total++;
+            detalhes.push(`${tarefa.cliente_nome} - Etapa: ${etapa.titulo} (${tel})`);
+          }
+        }
+      }
+    }
+
+    const agora = new Date().toLocaleString('pt-BR');
+    atualizarWhatsAppConfig({ ultima_sincronizacao: agora });
+    try {
+      localStorage.setItem('gestup_ultimo_disparo_08h', new Date().toISOString().split('T')[0]);
+    } catch {}
+
+    return { totalDisparados: total, detalhes };
   };
 
   const dispararResumoMatinalEquipe = () => {
@@ -1300,6 +1436,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         conectarWhatsAppSimulado,
         desconectarWhatsApp,
         gerarQRCodeWhatsApp,
+        verificarStatusWhatsAppReal,
+        executarReguaManha08h,
+        atualizarWhatsAppConfig,
+        enviarMensagemWhatsApp,
+        dispararResumoMatinalEquipe,
+        dispararCobrancaTarefa,
+        dispararCobrancaDocumentosCliente,
         addCliente,
         updateCliente,
         alternarStatusCliente,
@@ -1328,11 +1471,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addLead,
         updateLead,
         converterLeadEmCliente,
-        enviarMensagemWhatsApp,
-        atualizarWhatsAppConfig,
-        dispararResumoMatinalEquipe,
-        dispararCobrancaTarefa,
-        dispararCobrancaDocumentosCliente,
         redefinirDadosPadrao
       }}
     >

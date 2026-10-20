@@ -8,7 +8,11 @@ import {
   CRMProcedimentoTemplate,
   WhatsAppConfig,
   WhatsAppMensagem,
-  HonorarioItem
+  HonorarioItem,
+  ContaPagar,
+  ContaReceber,
+  ContaBancaria,
+  HistoricoAjusteSaldo
 } from '@/types';
 
 export const initialClientes: Cliente[] = [
@@ -4064,79 +4068,10 @@ export const initialFechamentosMensais = [
   }
 ];
 
-export const initialContasPagar = [
-  {
-    "observacoes": "",
-    "categoria": "Variável",
-    "valor": 408.78,
-    "data_pagamento": "2026-08-12",
-    "fornecedor": "Kaue Parceiro",
-    "data_vencimento": "2026-08-07",
-    "descricao": "Taxas Processo Alteração ",
-    "status": "Pago",
-    "recorrencia": "Único",
-    "id": "6a7c3d66de72c6312b2840ba",
-    "created_date": "2026-08-12T09:31:18.664000",
-    "updated_date": "2026-08-12T09:31:21.923000",
-    "created_by_id": "anonymous",
-    "created_by": "anonymous",
-    "is_sample": false
-  },
-  {
-    "observacoes": "",
-    "categoria": "Fixo",
-    "valor": 40,
-    "data_pagamento": "2026-08-12",
-    "fornecedor": "Claro br",
-    "data_vencimento": "2026-08-11",
-    "descricao": "PLANO CLARO",
-    "status": "Pago",
-    "recorrencia": "Único",
-    "id": "6a7c3d1ffa5e1ed9ca9f2bca",
-    "created_date": "2026-08-12T09:30:07.971000",
-    "updated_date": "2026-08-12T09:30:13.690000",
-    "created_by_id": "anonymous",
-    "created_by": "anonymous",
-    "is_sample": false
-  }
-];
+// PARTE FINANCEIRA ZERADA: Permanecem apenas registros a partir da competência 10/2026
+export const initialContasPagar: ContaPagar[] = [];
 
-export const initialContasReceber = [
-  {
-    "observacoes": "Valor R$ 2.350,00 se pago a vista R$ 2.100,00",
-    "cliente_nome": "ADEGA L&K LTDA",
-    "categoria": "Serviço Avulso",
-    "valor": 2100,
-    "cliente_id": "69a254c3e979d6980e06f183",
-    "data_vencimento": "2026-09-15",
-    "data_recebimento": "2026-09-16",
-    "descricao": "Planejamento tributário ",
-    "status": "Recebido",
-    "id": "6aa9ca1233ef1bb892db447d",
-    "created_date": "2026-09-15T22:43:30.598000",
-    "updated_date": "2026-09-16T08:31:42.644000",
-    "created_by_id": "anonymous",
-    "created_by": "anonymous",
-    "is_sample": false
-  },
-  {
-    "observacoes": "",
-    "cliente_nome": "",
-    "categoria": "Serviço Avulso",
-    "valor": 200,
-    "cliente_id": "",
-    "data_vencimento": "2026-07-17",
-    "data_recebimento": "2026-07-29",
-    "descricao": "Regularização MEI",
-    "status": "Recebido",
-    "id": "6a581ab96d7a9ee12e619b61",
-    "created_date": "2026-07-15T23:41:45.648000",
-    "updated_date": "2026-07-29T09:00:40.275000",
-    "created_by_id": "anonymous",
-    "created_by": "anonymous",
-    "is_sample": false
-  }
-];
+export const initialContasReceber: ContaReceber[] = [];
 
 export const initialProcedimentoTemplates: CRMProcedimentoTemplate[] = [
   {
@@ -4400,184 +4335,42 @@ export const initialHonorarios: HonorarioItem[] = [
     dias_atraso: 3,
     parcela_info: 'Parcela 4/12',
     created_at: '2026-10-01'
-  },
+  }
+];
 
-  // --- VENCIDOS DE MESES ANTERIORES (Exatamente como nas páginas 1 e 2 do PDF) ---
+export const initialContasBancarias: ContaBancaria[] = [
   {
-    id: 'hon-venc-caio-09',
-    cliente_id: '6a72b583f8bb0c0ea4a914e9',
-    cliente_nome: 'Caio Hugo Dos Santos de Azevedo',
-    contato_nome: 'Caio',
-    contato_telefone: '19993087561',
-    competencia: '09/2026',
-    valor: 120,
-    data_vencimento: '2026-09-05',
-    status: 'Vencido',
-    dias_atraso: 33,
-    parcela_info: 'Mensalidade MEI',
-    created_at: '2026-09-01'
+    id: 'banco-1',
+    nome: 'PicPay Empresas (Conta Oficial fin.up)',
+    banco: 'PicPay Bank',
+    tipo: 'Conta Corrente',
+    saldo_inicial: 0,
+    data_saldo_inicial: '2026-10-01',
+    saldo_atual: 0,
+    data_ultimo_ajuste: '2026-10-01',
+    chave_pix: 'finup.consultoria@gmail.com',
+    observacoes: 'Conta oficial vinculada para recebimento de honorários PIX e rotina de BPO'
   },
   {
-    id: 'hon-venc-lucas-09',
-    cliente_id: '6a72b5ea245c0f1bc0a404a8',
-    cliente_nome: 'Lucas Bonzanino',
-    contato_nome: 'Lucas',
-    contato_telefone: '19986092125',
-    competencia: '09/2026',
-    valor: 120,
-    data_vencimento: '2026-09-05',
-    status: 'Vencido',
-    dias_atraso: 33,
-    parcela_info: 'Mensalidade MEI',
-    created_at: '2026-09-01'
+    id: 'banco-2',
+    nome: 'Reserva Estratégica fin.up (10%)',
+    banco: 'PicPay Bank / RDB',
+    tipo: 'Poupança / Reserva',
+    saldo_inicial: 0,
+    data_saldo_inicial: '2026-10-01',
+    saldo_atual: 0,
+    data_ultimo_ajuste: '2026-10-01',
+    observacoes: 'Fundo de contingência e provisões fiscais'
   },
   {
-    id: 'hon-venc-estrela-09',
-    cliente_id: '69a6ca2806697ab67a94e954',
-    cliente_nome: 'MERCEARIA ESTRELA',
-    contato_nome: 'Silvia',
-    contato_telefone: '19999990001',
-    competencia: '09/2026',
-    valor: 500,
-    data_vencimento: '2026-09-30',
-    status: 'Vencido',
-    dias_atraso: 8,
-    parcela_info: 'Mensalidade 09/2026',
-    created_at: '2026-09-01'
-  },
-  {
-    id: 'hon-venc-estrela-08',
-    cliente_id: '69a6ca2806697ab67a94e954',
-    cliente_nome: 'MERCEARIA ESTRELA',
-    contato_nome: 'Silvia',
-    contato_telefone: '19999990001',
-    competencia: '08/2026',
-    valor: 500,
-    data_vencimento: '2026-08-30',
-    status: 'Vencido',
-    dias_atraso: 39,
-    parcela_info: 'Mensalidade 08/2026',
-    created_at: '2026-08-01'
-  },
-  {
-    id: 'hon-venc-estrela-07',
-    cliente_id: '69a6ca2806697ab67a94e954',
-    cliente_nome: 'MERCEARIA ESTRELA',
-    contato_nome: 'Silvia',
-    contato_telefone: '19999990001',
-    competencia: '07/2026',
-    valor: 500,
-    data_vencimento: '2026-07-30',
-    status: 'Vencido',
-    dias_atraso: 70,
-    parcela_info: 'Mensalidade 07/2026',
-    created_at: '2026-07-01'
-  },
-  {
-    id: 'hon-venc-dokadosh-09',
-    cliente_id: '699cb481beaa5a111a938c82',
-    cliente_nome: 'RAFAEL RODRIGUES PERES - DOKADOSH',
-    contato_nome: 'Rafael Leme',
-    contato_telefone: '19999990002',
-    competencia: '09/2026',
-    valor: 320,
-    data_vencimento: '2026-09-30',
-    status: 'Vencido',
-    dias_atraso: 8,
-    parcela_info: 'Mensalidade 09/2026',
-    created_at: '2026-09-01'
-  },
-  {
-    id: 'hon-venc-amis-09',
-    cliente_id: '699eebe4df5f03761356ba6f',
-    cliente_nome: 'AMIS SAUDE EM MOVIMENTO LTDA',
-    contato_nome: 'Milena',
-    contato_telefone: '19999990003',
-    competencia: '09/2026',
-    valor: 450,
-    data_vencimento: '2026-09-25',
-    status: 'Vencido',
-    dias_atraso: 13,
-    parcela_info: 'Mensalidade 09/2026',
-    created_at: '2026-09-01'
-  },
-  {
-    id: 'hon-venc-mostarda-09',
-    cliente_id: '69a258a514d0263f39589d93',
-    cliente_nome: 'Carlos Mostarda',
-    contato_nome: 'Carlos e Kelly',
-    contato_telefone: '19999990006',
-    competencia: '09/2026',
-    valor: 550,
-    data_vencimento: '2026-09-20',
-    status: 'Vencido',
-    dias_atraso: 18,
-    parcela_info: 'Parcela 2/12',
-    created_at: '2026-09-01'
-  },
-  {
-    id: 'hon-venc-asseri-09',
-    cliente_id: '69a506078948188b91d1aa8c',
-    cliente_nome: 'LEVI & ASSERI AUTO PECAS E SERVICOS LTDA',
-    contato_nome: 'Fabiola / Mayara',
-    contato_telefone: '19999990005',
-    competencia: '09/2026',
-    valor: 650,
-    data_vencimento: '2026-09-20',
-    status: 'Vencido',
-    dias_atraso: 18,
-    parcela_info: 'Parcela 3/12',
-    created_at: '2026-09-01'
-  },
-  {
-    id: 'hon-venc-powersong-08',
-    cliente_id: '69a2599723ecdbf7a468d7e9',
-    cliente_nome: 'ACADEMIA POWERSONG',
-    contato_nome: 'Rafael',
-    contato_telefone: '19999990004',
-    competencia: '08/2026',
-    valor: 320,
-    data_vencimento: '2026-08-20',
-    status: 'Vencido',
-    dias_atraso: 49,
-    parcela_info: 'Parcela 3/12',
-    created_at: '2026-08-01'
-  },
-
-  // --- EXEMPLO HISTÓRICO: Honorário de 09/2026 pago em 05/10/2026 (Exatamente a regra do usuário) ---
-  {
-    id: 'hon-hist-blackburguer-09',
-    cliente_id: '6a722218cec951fb77d80bb6',
-    cliente_nome: 'THE BLACK BURGUER',
-    contato_nome: 'Rodrigo / Jaksson',
-    contato_telefone: '5519992080639',
-    competencia: '09/2026', // Origem: Setembro/2026
-    valor: 1900,
-    data_vencimento: '2026-09-10',
-    data_pagamento: '2026-10-05', // Pago em 05/10/2026
-    competencia_pagamento: '10/2026', // Computado no faturamento de caixa de Outubro!
-    status: 'Pago',
-    forma_pagamento: 'PIX PicPay',
-    parcela_info: 'Parcela 2/12',
-    observacoes: 'Baixa realizada em 05/10/2026. Quita competência 09/2026 e entra no caixa de 10/2026.',
-    conciliado_ofx: true,
-    created_at: '2026-09-01'
-  },
-  {
-    id: 'hon-hist-adega-09',
-    cliente_id: '69a254c3e979d6980e06f183',
-    cliente_nome: 'ADEGA L&K LTDA',
-    contato_nome: 'Leonardo Fattori',
-    contato_telefone: '19999990007',
-    competencia: '09/2026',
-    valor: 550,
-    data_vencimento: '2026-09-15',
-    data_pagamento: '2026-09-16',
-    competencia_pagamento: '09/2026',
-    status: 'Pago',
-    forma_pagamento: 'PIX PicPay',
-    parcela_info: 'Parcela 4/12',
-    conciliado_ofx: true,
-    created_at: '2026-09-01'
+    id: 'banco-3',
+    nome: 'Caixa Operacional & Despesas (20%)',
+    banco: 'Caixa Interno',
+    tipo: 'Caixa Físico',
+    saldo_inicial: 0,
+    data_saldo_inicial: '2026-10-01',
+    saldo_atual: 0,
+    data_ultimo_ajuste: '2026-10-01',
+    observacoes: 'Giro para taxas de junta comercial (JUCESP), certidões e cartório'
   }
 ];

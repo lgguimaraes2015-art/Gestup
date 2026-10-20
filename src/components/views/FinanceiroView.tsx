@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
-import { HonorarioItem, ContaPagar, ReceitaNaoRecorrente } from '@/types';
+import { HonorarioItem, ContaPagar, ReceitaNaoRecorrente, ContaBancaria, HistoricoAjusteSaldo } from '@/types';
 import {
   DollarSign,
   TrendingUp,
@@ -32,7 +32,11 @@ import {
   CheckCheck,
   RotateCcw,
   Receipt,
-  Phone
+  Phone,
+  Landmark,
+  Sliders,
+  History,
+  RefreshCw
 } from 'lucide-react';
 
 export function FinanceiroView() {
@@ -42,6 +46,12 @@ export function FinanceiroView() {
     contasPagar,
     receitasNaoRecorrentes,
     transacoesOFX,
+    contasBancarias,
+    historicoAjustesSaldo,
+    ajustarSaldoConta,
+    addContaBancaria,
+    deleteContaPagar,
+    redefinirFinanceiro,
     darBaixaHonorario,
     gerarHonorariosCompetencia,
     dispararCobrancaHonorarioWhatsApp,
@@ -54,11 +64,14 @@ export function FinanceiroView() {
   } = useApp();
 
   // Abas do Módulo Financeiro
-  const [abaAtiva, setAbaAtiva] = useState<'honorarios' | 'clientes-consolidado' | 'partilha' | 'pagar' | 'avulsas' | 'ofx'>('honorarios');
+  const [abaAtiva, setAbaAtiva] = useState<'honorarios' | 'clientes-consolidado' | 'partilha' | 'pagar' | 'avulsas' | 'ofx' | 'bancos'>('honorarios');
 
-  // Competência selecionada para a gestão de honorários (padrão: Outubro 2026)
+  // Competência selecionada para a gestão de honorários (Apenas 10/2026 para frente)
   const [competenciaSelecionada, setCompetenciaSelecionada] = useState<string>('10/2026');
-  const mesesDisponiveis = ['07/2026', '08/2026', '09/2026', '10/2026', '11/2026', '12/2026'];
+  const mesesDisponiveis = [
+    '10/2026', '11/2026', '12/2026',
+    '01/2027', '02/2027', '03/2027', '04/2027', '05/2027', '06/2027'
+  ];
 
   // Controle da sanfona (accordion) de Honorários Vencidos
   const [vencidosAberto, setVencidosAberto] = useState<boolean>(true);
@@ -98,6 +111,19 @@ export function FinanceiroView() {
   // Form Custo Avulso
   const [descCusto, setDescCusto] = useState('');
   const [valorCusto, setValorCusto] = useState(200);
+
+  // Modais de Contas Bancárias & Ajuste de Saldo
+  const [modalAjusteSaldo, setModalAjusteSaldo] = useState<ContaBancaria | null>(null);
+  const [novoSaldoInput, setNovoSaldoInput] = useState<number>(0);
+  const [motivoAjusteInput, setMotivoAjusteInput] = useState<string>('Ajuste de saldo inicial para início de controle em 10/2026');
+  const [responsavelAjusteInput, setResponsavelAjusteInput] = useState<string>('Guilherme');
+
+  const [modalNovaContaBancaria, setModalNovaContaBancaria] = useState<boolean>(false);
+  const [novaContaNome, setNovaContaNome] = useState<string>('');
+  const [novaContaBanco, setNovaContaBanco] = useState<string>('PicPay Bank');
+  const [novaContaTipo, setNovaContaTipo] = useState<'Conta Corrente' | 'Poupança / Reserva' | 'Caixa Físico'>('Conta Corrente');
+  const [novaContaSaldoInicial, setNovaContaSaldoInicial] = useState<number>(0);
+  const [novaContaObs, setNovaContaObs] = useState<string>('');
 
   // Toast Feedback
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -289,6 +315,58 @@ export function FinanceiroView() {
     return matchBusca && matchStatus;
   });
 
+  // 16. Ações de Contas Bancárias & Ajuste de Saldo
+  const handleAbrirAjusteSaldo = (conta: ContaBancaria) => {
+    setModalAjusteSaldo(conta);
+    setNovoSaldoInput(conta.saldo_atual);
+    setMotivoAjusteInput('Ajuste de saldo inicial para início de controle em 10/2026');
+    setResponsavelAjusteInput('Guilherme');
+  };
+
+  const handleConfirmarAjusteSaldo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalAjusteSaldo) return;
+
+    ajustarSaldoConta(modalAjusteSaldo.id, novoSaldoInput, motivoAjusteInput, responsavelAjusteInput);
+    setModalAjusteSaldo(null);
+    setToastMsg(`✅ Saldo da conta "${modalAjusteSaldo.nome}" atualizado para R$ ${novoSaldoInput.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}!`);
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  const handleSalvarNovaContaBancaria = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novaContaNome.trim()) return;
+
+    addContaBancaria({
+      nome: novaContaNome,
+      banco: novaContaBanco,
+      tipo: novaContaTipo,
+      saldo_inicial: novaContaSaldoInicial,
+      data_saldo_inicial: '2026-10-01',
+      saldo_atual: novaContaSaldoInicial,
+      data_ultimo_ajuste: new Date().toISOString(),
+      observacoes: novaContaObs
+    });
+
+    setModalNovaContaBancaria(false);
+    setNovaContaNome('');
+    setNovaContaSaldoInicial(0);
+    setNovaContaObs('');
+    setToastMsg('✅ Nova conta bancária cadastrada com sucesso!');
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  const handleResetarHistoricoFinanceiro = () => {
+    if (window.confirm('Atenção: Esta ação irá limpar qualquer resquício financeiro anterior a 10/2026 e manterá estritamente a competência 10/2026 para frente. Deseja prosseguir?')) {
+      redefinirFinanceiro();
+      setToastMsg('✅ Módulo financeiro zerado e parametrizado para 10/2026 em diante!');
+      setTimeout(() => setToastMsg(null), 4000);
+    }
+  };
+
+  // Saldo Bancário Consolidado
+  const totalSaldoBancarioGeral = contasBancarias.reduce((acc, c) => acc + c.saldo_atual, 0);
+
   return (
     <div className="space-y-6">
       {/* Toast Notificação */}
@@ -299,22 +377,37 @@ export function FinanceiroView() {
         </div>
       )}
 
-      {/* CABEÇALHO COM ABAS */}
+      {/* CABEÇALHO */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-xl font-black text-slate-900 tracking-tight">Financeiro & Fechamento</h2>
             <span className="bg-emerald-100 text-brand-green text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
               Regime Competência x Caixa
             </span>
+            <span className="bg-blue-100 text-brand-blue text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              Base: 10/2026 em diante
+            </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Gestão de honorários, controle de vencidos, conciliação PicPay e partilha de sócios (35/35/30)
+            Gestão de honorários, controle de vencidos, conciliação PicPay, partilha e gestão de saldos bancários
           </p>
         </div>
 
-        {/* Seleção de Abas */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200 overflow-x-auto text-xs font-semibold">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleResetarHistoricoFinanceiro}
+            title="Garante que apenas registros de 10/2026 em diante existam no sistema"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-all shadow-sm"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Zerar &lt; 10/2026</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Seleção de Abas */}
+      <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200 overflow-x-auto text-xs font-semibold">
           <button
             onClick={() => setAbaAtiva('honorarios')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all ${
@@ -393,8 +486,19 @@ export function FinanceiroView() {
             <Upload className="w-3.5 h-3.5" />
             <span>Conciliação PicPay (OFX)</span>
           </button>
+
+          <button
+            onClick={() => setAbaAtiva('bancos')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all ${
+              abaAtiva === 'bancos'
+                ? 'bg-brand-blue text-white shadow-sm font-bold'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            }`}
+          >
+            <Landmark className="w-3.5 h-3.5" />
+            <span>Contas & Saldos</span>
+          </button>
         </div>
-      </div>
 
       {/* ========================================================================= */}
       {/* ABA 01: HONORÁRIOS POR COMPETÊNCIA (CARRO-CHEFE)                          */}
@@ -1232,6 +1336,193 @@ export function FinanceiroView() {
       )}
 
       {/* ========================================================================= */}
+      {/* ABA 07: CONTAS BANCÁRIAS & AJUSTE DE SALDO (10/2026 EM DIANTE)           */}
+      {/* ========================================================================= */}
+      {abaAtiva === 'bancos' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* BANNER INFORMATIVO E SALDO CONSOLIDADO */}
+          <div className="bg-gradient-to-r from-slate-900 via-brand-dark-blue to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Landmark className="w-5 h-5 text-emerald-400" />
+                  <span className="text-xs font-bold tracking-wider uppercase text-emerald-400">
+                    Posição Bancária & Caixa
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-white/10 font-bold text-slate-300">
+                    Competência Base: 10/2026
+                  </span>
+                </div>
+                <h3 className="text-2xl font-black tracking-tight">Gestão de Contas & Ajustes de Saldo</h3>
+                <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                  Controle centralizado dos saldos das contas bancárias e reservas estratégicas. Ajuste o saldo inicial para início de controle a partir de 10/2026 com registro de auditoria completo.
+                </p>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md border border-white/15 p-4 rounded-2xl min-w-[240px] text-right">
+                <span className="text-[11px] font-semibold text-slate-300 block">Saldo Consolidado Geral</span>
+                <span className="text-2xl font-black text-emerald-400 block tracking-tight">
+                  R$ {totalSaldoBancarioGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+                <div className="flex items-center justify-end gap-1.5 mt-2">
+                  <button
+                    onClick={() => setModalNovaContaBancaria(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 font-bold text-xs transition-all shadow-sm"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Nova Conta</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* GRID DE CONTAS BANCÁRIAS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {contasBancarias.map(conta => (
+              <div
+                key={conta.id}
+                className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-subtle hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 rounded-2xl bg-blue-50 text-brand-blue border border-blue-100">
+                        <Landmark className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-sm leading-tight">{conta.nome}</h4>
+                        <span className="text-[11px] font-semibold text-slate-500">{conta.banco}</span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                      {conta.tipo}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs text-slate-500 font-medium">Saldo Atual:</span>
+                      <span className="text-lg font-black text-slate-900">
+                        R$ {conta.saldo_atual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+                      <span>Saldo Inicial (10/2026):</span>
+                      <span className="font-semibold text-slate-700">
+                        R$ {conta.saldo_inicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+
+                    {conta.data_ultimo_ajuste && (
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>Último ajuste:</span>
+                        <span>{new Date(conta.data_ultimo_ajuste).toLocaleDateString('pt-BR')}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {conta.observacoes && (
+                    <p className="text-[11px] text-slate-500 mt-2 px-1 italic">
+                      {conta.observacoes}
+                    </p>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => handleAbrirAjusteSaldo(conta)}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-900 hover:bg-brand-blue text-white text-xs font-bold transition-all shadow-sm"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>Ajustar Saldo</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* HISTÓRICO DE AUDITORIA DE AJUSTES DE SALDO */}
+          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-subtle p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-50 text-brand-blue">
+                  <History className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm">Histórico de Ajustes de Saldo</h4>
+                  <p className="text-xs text-slate-500">Registro de auditoria para controle e conferência contábil</p>
+                </div>
+              </div>
+
+              {historicoAjustesSaldo.length > 0 && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
+                  {historicoAjustesSaldo.length} {historicoAjustesSaldo.length === 1 ? 'registro' : 'registros'}
+                </span>
+              )}
+            </div>
+
+            {historicoAjustesSaldo.length === 0 ? (
+              <div className="text-center py-8 px-4 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                <Landmark className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs font-bold text-slate-700">Nenhum ajuste manual registrado ainda</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 max-w-sm mx-auto">
+                  Clique no botão &quot;Ajustar Saldo&quot; de qualquer conta bancária acima para parametrizar o saldo inicial da competência 10/2026.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
+                      <th className="py-2.5 px-3">Data / Hora</th>
+                      <th className="py-2.5 px-3">Conta</th>
+                      <th className="py-2.5 px-3">Saldo Anterior</th>
+                      <th className="py-2.5 px-3">Novo Saldo</th>
+                      <th className="py-2.5 px-3">Diferença</th>
+                      <th className="py-2.5 px-3">Motivo / Justificativa</th>
+                      <th className="py-2.5 px-3">Responsável</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {historicoAjustesSaldo.map(item => (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
+                          {new Date(item.data).toLocaleString('pt-BR')}
+                        </td>
+                        <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
+                          {item.conta_nome}
+                        </td>
+                        <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
+                          R$ {item.saldo_anterior.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-3 font-extrabold text-slate-900 whitespace-nowrap">
+                          R$ {item.novo_saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap font-bold">
+                          <span className={item.diferenca >= 0 ? 'text-brand-green' : 'text-red-600'}>
+                            {item.diferenca >= 0 ? '+' : ''}
+                            R$ {item.diferenca.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-700 max-w-xs truncate" title={item.motivo}>
+                          {item.motivo}
+                        </td>
+                        <td className="py-3 px-3 text-slate-600 whitespace-nowrap font-medium">
+                          {item.responsavel}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* MODAL INTELIGENTE DE BAIXA DE HONORÁRIO                                   */}
       {/* ========================================================================= */}
       {modalBaixaHonorario && (
@@ -1673,6 +1964,204 @@ export function FinanceiroView() {
                   className="px-4 py-2 rounded-xl bg-red-600 text-white font-bold"
                 >
                   Vincular Custo
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ========================================================================= */}
+      {/* MODAL AJUSTE DE SALDO BANCÁRIO                                            */}
+      {/* ========================================================================= */}
+      {modalAjusteSaldo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-brand-blue" />
+                <h3 className="font-bold text-slate-900 text-sm">Ajustar Saldo de Conta</h3>
+              </div>
+              <button
+                onClick={() => setModalAjusteSaldo(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmarAjusteSaldo} className="p-6 space-y-4 text-xs">
+              {/* Card da Conta */}
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900">{modalAjusteSaldo.nome}</span>
+                  <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                    {modalAjusteSaldo.banco}
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between pt-1">
+                  <span className="text-slate-500">Saldo Atual Registrado:</span>
+                  <span className="font-extrabold text-slate-800 text-sm">
+                    R$ {modalAjusteSaldo.saldo_atual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Novo Saldo Real da Conta (R$) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={novoSaldoInput}
+                  onChange={e => setNovoSaldoInput(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-base text-slate-900 focus:ring-2 focus:ring-brand-blue/20"
+                />
+                <div className="mt-1 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">Diferença / Ajuste:</span>
+                  <span className={`font-bold ${novoSaldoInput - modalAjusteSaldo.saldo_atual >= 0 ? 'text-brand-green' : 'text-red-600'}`}>
+                    {novoSaldoInput - modalAjusteSaldo.saldo_atual >= 0 ? '+' : ''}
+                    R$ {(novoSaldoInput - modalAjusteSaldo.saldo_atual).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Motivo / Justificativa do Ajuste *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Saldo inicial para início de controle em 10/2026"
+                  value={motivoAjusteInput}
+                  onChange={e => setMotivoAjusteInput(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Responsável pelo Ajuste</label>
+                <input
+                  type="text"
+                  value={responsavelAjusteInput}
+                  onChange={e => setResponsavelAjusteInput(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 font-semibold"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setModalAjusteSaldo(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-bold transition-all shadow-md"
+                >
+                  Salvar Ajuste
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL NOVA CONTA BANCÁRIA                                                 */}
+      {/* ========================================================================= */}
+      {modalNovaContaBancaria && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+              <div className="flex items-center gap-2">
+                <Landmark className="w-4 h-4 text-brand-blue" />
+                <h3 className="font-bold text-slate-900 text-sm">Adicionar Conta Bancária</h3>
+              </div>
+              <button
+                onClick={() => setModalNovaContaBancaria(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarNovaContaBancaria} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Nome de Identificação *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Inter PJ ou Reserva Imprevistos"
+                  value={novaContaNome}
+                  onChange={e => setNovaContaNome(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Instituição / Banco</label>
+                  <input
+                    type="text"
+                    value={novaContaBanco}
+                    onChange={e => setNovaContaBanco(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tipo de Conta</label>
+                  <select
+                    value={novaContaTipo}
+                    onChange={e => setNovaContaTipo(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                  >
+                    <option value="Conta Corrente">Conta Corrente</option>
+                    <option value="Poupança / Reserva">Poupança / Reserva</option>
+                    <option value="Caixa Físico">Caixa Físico</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Saldo Inicial em 10/2026 (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={novaContaSaldoInicial}
+                  onChange={e => setNovaContaSaldoInicial(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Observações / Finalidade</label>
+                <textarea
+                  rows={2}
+                  placeholder="Ex: Conta destinada ao recebimento de clientes ou fundo de reserva"
+                  value={novaContaObs}
+                  onChange={e => setNovaContaObs(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setModalNovaContaBancaria(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-bold transition-all shadow-md"
+                >
+                  Cadastrar Conta
                 </button>
               </div>
             </form>

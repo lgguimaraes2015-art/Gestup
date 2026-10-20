@@ -284,6 +284,33 @@ export interface TransacaoOFX {
   banco: 'PicPay Empresas' | 'Outro';
 }
 
+export interface ContaBancaria {
+  id: string;
+  nome: string;
+  banco: string;
+  tipo: 'Conta Corrente' | 'Poupança / Reserva' | 'Caixa Físico';
+  saldo_inicial: number;
+  data_saldo_inicial: string;
+  saldo_atual: number;
+  data_ultimo_ajuste?: string;
+  chave_pix?: string;
+  agencia?: string;
+  numero_conta?: string;
+  observacoes?: string;
+}
+
+export interface HistoricoAjusteSaldo {
+  id: string;
+  conta_id: string;
+  conta_nome: string;
+  data: string;
+  saldo_anterior: number;
+  novo_saldo: number;
+  diferenca: number;
+  motivo: string;
+  responsavel: string;
+}
+
 export interface FuncionarioCliente {
   id: string;
   cliente_id: string;

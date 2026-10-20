@@ -23,7 +23,9 @@ import {
   HonorarioItem,
   EtapaProcessoTarefa,
   ArquivoEtapa,
-  ConfiguracaoCobrancaEtapa
+  ConfiguracaoCobrancaEtapa,
+  ContaBancaria,
+  HistoricoAjusteSaldo
 } from '@/types';
 import {
   initialClientes,
@@ -36,7 +38,8 @@ import {
   initialWhatsAppMensagens,
   initialContasPagar,
   initialContasReceber,
-  initialHonorarios
+  initialHonorarios,
+  initialContasBancarias
 } from '@/lib/mockData';
 
 interface AppContextType {
@@ -55,6 +58,8 @@ interface AppContextType {
   honorarios: HonorarioItem[];
   receitasNaoRecorrentes: ReceitaNaoRecorrente[];
   transacoesOFX: TransacaoOFX[];
+  contasBancarias: ContaBancaria[];
+  historicoAjustesSaldo: HistoricoAjusteSaldo[];
   
   // Navegação
   activeTab: string;
@@ -133,6 +138,7 @@ interface AppContextType {
   // Ações Financeiras & Conciliação
   addContaPagar: (conta: Omit<ContaPagar, 'id'>) => void;
   pagarConta: (id: string, dataPagamento?: string) => void;
+  deleteContaPagar: (id: string) => void;
   addContaReceber: (conta: Omit<ContaReceber, 'id'>) => void;
   receberConta: (id: string, dataRecebimento?: string) => void;
   gerarProvisaoMensalHonorarios: (mesRef: string) => void;
@@ -140,6 +146,11 @@ interface AppContextType {
   addCustoReceitaNaoRecorrente: (receitaId: string, custo: Omit<CustoVinculadoReceita, 'id'>) => void;
   importarExtratoOFX: (banco: 'PicPay Empresas' | 'Outro', transacoes: Omit<TransacaoOFX, 'id'>[]) => void;
   conciliarTransacaoOFX: (transacaoId: string, referenciaDescricao: string) => void;
+
+  // Ações de Contas Bancárias & Ajuste de Saldo
+  ajustarSaldoConta: (contaId: string, novoSaldo: number, motivo: string, responsavel?: string) => void;
+  addContaBancaria: (conta: Omit<ContaBancaria, 'id'>) => void;
+  redefinirFinanceiro: () => void;
 
   // Ações de Honorários por Competência (Regime Competência x Caixa)
   darBaixaHonorario: (
@@ -321,10 +332,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [whatsAppConfig, setWhatsAppConfig] = useState<WhatsAppConfig>(initialWhatsAppConfig);
   const [whatsAppMensagens, setWhatsAppMensagens] = useState<WhatsAppMensagem[]>(initialWhatsAppMensagens);
 
-  // Estados Financeiros
+  // Estados Financeiros (Zerados para competência 10/2026 para frente)
   const [contasPagar, setContasPagar] = useState<ContaPagar[]>(initialContasPagar as ContaPagar[]);
   const [contasReceber, setContasReceber] = useState<ContaReceber[]>(initialContasReceber as ContaReceber[]);
   const [honorarios, setHonorarios] = useState<HonorarioItem[]>(initialHonorarios);
+  const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>(initialContasBancarias);
+  const [historicoAjustesSaldo, setHistoricoAjustesSaldo] = useState<HistoricoAjusteSaldo[]>([]);
   const [receitasNaoRecorrentes, setReceitasNaoRecorrentes] = useState<ReceitaNaoRecorrente[]>([
     {
       id: 'rec-avulsa-1',
@@ -406,12 +419,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       const savedDeclaracoes = localStorage.getItem('gestup_v2_declaracoes');
       if (savedDeclaracoes) setDeclaracoes((JSON.parse(savedDeclaracoes) as Declaracao[]).map(enrichDeclaracao));
+      // 1. Contas a Pagar: Apenas a partir de 10/2026
       const savedPagar = localStorage.getItem('gestup_v2_contas_pagar');
-      if (savedPagar) setContasPagar(JSON.parse(savedPagar));
+      if (savedPagar) {
+        const parsedPagar = JSON.parse(savedPagar) as ContaPagar[];
+        const filtradosPagar = parsedPagar.filter(cp => cp.data_vencimento && cp.data_vencimento >= '2026-10-01');
+        setContasPagar(filtradosPagar);
+        try { localStorage.setItem('gestup_v2_contas_pagar', JSON.stringify(filtradosPagar)); } catch {}
+      } else {
+        setContasPagar([]);
+      }
+
+      // 2. Contas a Receber: Apenas a partir de 10/2026
       const savedReceber = localStorage.getItem('gestup_v2_contas_receber');
-      if (savedReceber) setContasReceber(JSON.parse(savedReceber));
+      if (savedReceber) {
+        const parsedReceber = JSON.parse(savedReceber) as ContaReceber[];
+        const filtradosReceber = parsedReceber.filter(cr => cr.data_vencimento && cr.data_vencimento >= '2026-10-01');
+        setContasReceber(filtradosReceber);
+        try { localStorage.setItem('gestup_v2_contas_receber', JSON.stringify(filtradosReceber)); } catch {}
+      } else {
+        setContasReceber([]);
+      }
+
+      // 3. Honorários: Mantém estritamente competência 10/2026 para frente
       const savedHonorarios = localStorage.getItem('gestup_v2_honorarios');
-      if (savedHonorarios) setHonorarios(JSON.parse(savedHonorarios));
+      if (savedHonorarios) {
+        const parsedHons = JSON.parse(savedHonorarios) as HonorarioItem[];
+        const filtradosHons = parsedHons.filter(h => {
+          if (!h.competencia) return false;
+          const [m, y] = h.competencia.split('/').map(Number);
+          if (isNaN(m) || isNaN(y)) return false;
+          return (y > 2026) || (y === 2026 && m >= 10);
+        });
+        const honsFinais = filtradosHons.length > 0 ? filtradosHons : initialHonorarios;
+        setHonorarios(honsFinais);
+        try { localStorage.setItem('gestup_v2_honorarios', JSON.stringify(honsFinais)); } catch {}
+      } else {
+        setHonorarios(initialHonorarios);
+      }
+
+      // 4. Contas Bancárias & Ajustes de Saldo
+      const savedContasBancarias = localStorage.getItem('gestup_v2_contas_bancarias');
+      if (savedContasBancarias) {
+        setContasBancarias(JSON.parse(savedContasBancarias));
+      }
+      const savedHistoricoAjustes = localStorage.getItem('gestup_v2_historico_ajustes_saldo');
+      if (savedHistoricoAjustes) {
+        setHistoricoAjustesSaldo(JSON.parse(savedHistoricoAjustes));
+      }
       const savedWhatsApp = localStorage.getItem('gestup_v2_whatsapp_config');
       if (savedWhatsApp) {
         const parsed = JSON.parse(savedWhatsApp);
@@ -497,6 +552,80 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem('gestup_v2_honorarios', JSON.stringify(newHons)); } catch {}
   };
 
+  const saveContasBancarias = (newContas: ContaBancaria[]) => {
+    setContasBancarias(newContas);
+    try { localStorage.setItem('gestup_v2_contas_bancarias', JSON.stringify(newContas)); } catch {}
+  };
+
+  const saveHistoricoAjustes = (newHist: HistoricoAjusteSaldo[]) => {
+    setHistoricoAjustesSaldo(newHist);
+    try { localStorage.setItem('gestup_v2_historico_ajustes_saldo', JSON.stringify(newHist)); } catch {}
+  };
+
+  const deleteContaPagar = (id: string) => {
+    saveContasPagar(contasPagar.filter(cp => cp.id !== id));
+  };
+
+  const addContaBancaria = (conta: Omit<ContaBancaria, 'id'>) => {
+    const nova: ContaBancaria = {
+      ...conta,
+      id: `banco-${Date.now()}`
+    };
+    saveContasBancarias([...contasBancarias, nova]);
+  };
+
+  const ajustarSaldoConta = (contaId: string, novoSaldo: number, motivo: string, responsavel = 'Guilherme') => {
+    const agora = new Date().toLocaleString('pt-BR');
+    let saldoAnt = 0;
+    let nomeConta = 'Conta Bancária';
+
+    const atualizadas = contasBancarias.map(c => {
+      if (c.id === contaId) {
+        saldoAnt = c.saldo_atual;
+        nomeConta = c.nome;
+        return {
+          ...c,
+          saldo_atual: novoSaldo,
+          data_ultimo_ajuste: agora,
+          observacoes: motivo ? `${c.observacoes || ''}\n[${agora}] Ajuste para R$ ${novoSaldo.toFixed(2)}: ${motivo}` : c.observacoes
+        };
+      }
+      return c;
+    });
+
+    saveContasBancarias(atualizadas);
+
+    const novoHistorico: HistoricoAjusteSaldo = {
+      id: `ajuste-${Date.now()}`,
+      conta_id: contaId,
+      conta_nome: nomeConta,
+      data: agora,
+      saldo_anterior: saldoAnt,
+      novo_saldo: novoSaldo,
+      diferenca: novoSaldo - saldoAnt,
+      motivo: motivo || 'Ajuste manual de saldo inicial / conciliação',
+      responsavel
+    };
+
+    saveHistoricoAjustes([novoHistorico, ...historicoAjustesSaldo]);
+  };
+
+  // Redefine todo o módulo financeiro: zera passados e mantém estritamente 10/2026 para frente
+  const redefinirFinanceiro = () => {
+    setHonorarios(initialHonorarios);
+    setContasPagar([]);
+    setContasReceber([]);
+    setContasBancarias(initialContasBancarias);
+    setHistoricoAjustesSaldo([]);
+    try {
+      localStorage.setItem('gestup_v2_honorarios', JSON.stringify(initialHonorarios));
+      localStorage.setItem('gestup_v2_contas_pagar', JSON.stringify([]));
+      localStorage.setItem('gestup_v2_contas_receber', JSON.stringify([]));
+      localStorage.setItem('gestup_v2_contas_bancarias', JSON.stringify(initialContasBancarias));
+      localStorage.removeItem('gestup_v2_historico_ajustes_saldo');
+    } catch {}
+  };
+
   const redefinirDadosPadrao = () => {
     try {
       localStorage.clear();
@@ -504,9 +633,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setClientes(initialClientes.map(enrichCliente));
     setTarefas(initialTarefas.map(enrichTarefa));
     setDeclaracoes((initialDeclaracoes as Declaracao[]).map(enrichDeclaracao));
-    setContasPagar(initialContasPagar as ContaPagar[]);
-    setContasReceber(initialContasReceber as ContaReceber[]);
+    setContasPagar([]);
+    setContasReceber([]);
     setHonorarios(initialHonorarios);
+    setContasBancarias(initialContasBancarias);
+    setHistoricoAjustesSaldo([]);
   };
 
   // ================= TAREFAS =================
@@ -1479,6 +1610,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         conciliarTransacaoOFX,
         addLead,
         updateLead,
+        contasBancarias,
+        historicoAjustesSaldo,
+        deleteContaPagar,
+        ajustarSaldoConta,
+        addContaBancaria,
+        redefinirFinanceiro,
         converterLeadEmCliente,
         redefinirDadosPadrao
       }}

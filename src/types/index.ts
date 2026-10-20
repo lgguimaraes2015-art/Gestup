@@ -6,6 +6,8 @@ export type RegimeTributario = 'Simples Nacional' | 'Lucro Presumido' | 'Lucro R
 export interface GuiaPagamentoTarefa {
   arquivo_nome: string;
   arquivo_url: string;
+  arquivo_conteudo?: string; // Base64 / Data URL para download e envio como mídia
+  arquivo_tamanho?: string;
   data_vencimento: string;
   valor?: number;
   enviado_email: boolean;
@@ -113,6 +115,7 @@ export interface Tarefa {
   comentarios_lista?: ComentarioItem[];
   eh_processo?: boolean; // Habilita a tarefa como Gestão de Processos com etapas
   etapas_processo?: EtapaProcessoTarefa[];
+  arquivos_anexos?: ArquivoEtapa[]; // Documentos/Guias fixados na tarefa
   created_at: string;
 }
 
@@ -120,6 +123,7 @@ export interface ArquivoEtapa {
   id: string;
   nome: string;
   url: string;
+  conteudo?: string; // Data URL / Base64 do arquivo
   tamanho?: string;
   data_upload: string;
 }
@@ -434,6 +438,16 @@ export interface CRMEvento {
 
 // ==================== MÓDULO WHATSAPP & AUTOMAÇÃO ====================
 
+export interface ModeloMensagemTarefa {
+  id: string;
+  tipo_chave: 'simples_nacional' | 'folha_pagamento' | 'dctfweb' | 'honorarios' | 'padrao' | string;
+  nome: string; // Ex: "Tarefa do Simples Nacional", "Folha de Pagamento / Pró-Labore"
+  descricao?: string;
+  categoria_tarefa?: Departamento | 'Geral';
+  palavras_chave: string[]; // Termos para detecção automática (ex: ["simples nacional", "das"])
+  texto_template: string;
+}
+
 export interface WhatsAppConfig {
   conectado: boolean;
   status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'QRCODE';
@@ -449,7 +463,10 @@ export interface WhatsAppConfig {
   api_key?: string;
   instancia_id?: string;
   qrcode_base64?: string;
+  qr_code?: string;
   ultima_sincronizacao?: string;
+  dominio_publico?: string; // URL pública para links de guias (ex: https://gestup.vercel.app)
+  modelos_mensagens?: ModeloMensagemTarefa[];
 }
 
 export interface WhatsAppMensagem {

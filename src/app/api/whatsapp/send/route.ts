@@ -6,14 +6,17 @@ export async function POST(req: NextRequest) {
     const {
       number,
       text,
+      media, // Data URL ou URL pública do documento (ex: data:application/pdf;base64,...)
+      fileName,
+      mimeType = 'application/pdf',
       apiUrl = 'https://evolution-api-production-ed7c.up.railway.app',
       apiKey = '68A885CD-5F29-4269-949C-8AEB4D149393',
       instanceName = 'gestup'
     } = body;
 
-    if (!number || !text) {
+    if (!number || (!text && !media)) {
       return NextResponse.json(
-        { success: false, error: 'Número e mensagem são obrigatórios.' },
+        { success: false, error: 'Número e mensagem ou documento são obrigatórios.' },
         { status: 400 }
       );
     }
@@ -26,11 +29,54 @@ export async function POST(req: NextRequest) {
 
     // Normaliza a URL da API
     const baseUrl = String(apiUrl).trim().replace(/\/+$/, '');
-    const endpoint = `${baseUrl}/message/sendText/${encodeURIComponent(instanceName.trim())}`;
+    const cleanInstance = encodeURIComponent(instanceName.trim());
 
-    console.log(`[WhatsApp API] Disparando mensagem para ${cleanNumber} via ${endpoint}`);
+    // Se houver arquivo anexo (mídia), tenta enviar via sendMedia primeiro
+    if (media) {
+      try {
+        const mediaEndpoint = `${baseUrl}/message/sendMedia/${cleanInstance}`;
+        console.log(`[WhatsApp API] Tentando enviar documento/mídia para ${cleanNumber} via ${mediaEndpoint}`);
 
-    const response = await fetch(endpoint, {
+        const mediaResponse = await fetch(mediaEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': apiKey.trim()
+          },
+          body: JSON.stringify({
+            number: cleanNumber,
+            mediatype: 'document',
+            mimetype: mimeType,
+            caption: text || '',
+            media: media,
+            fileName: fileName || 'Guia_Pagamento.pdf',
+            delay: 1200
+          })
+        });
+
+        const mediaData = await mediaResponse.json().catch(() => null);
+
+        if (mediaResponse.ok) {
+          console.log(`[WhatsApp API] Mídia enviada com sucesso para ${cleanNumber}`);
+          return NextResponse.json({
+            success: true,
+            mediaSent: true,
+            messageId: mediaData?.key?.id,
+            data: mediaData
+          });
+        }
+
+        console.warn('[WhatsApp API] Falha no envio de mídia, tentando fallback para sendText:', mediaData);
+      } catch (mediaErr) {
+        console.warn('[WhatsApp API] Exceção no envio de mídia, fallback para sendText:', mediaErr);
+      }
+    }
+
+    // Envio de texto (padrão ou fallback)
+    const textEndpoint = `${baseUrl}/message/sendText/${cleanInstance}`;
+    console.log(`[WhatsApp API] Disparando mensagem de texto para ${cleanNumber} via ${textEndpoint}`);
+
+    const response = await fetch(textEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -46,7 +92,7 @@ export async function POST(req: NextRequest) {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      console.error('[WhatsApp API] Erro ao enviar mensagem:', response.status, data);
+      console.error('[WhatsApp API] Erro ao enviar mensagem de texto:', response.status, data);
       return NextResponse.json(
         {
           success: false,

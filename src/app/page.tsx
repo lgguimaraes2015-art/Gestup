@@ -22,7 +22,7 @@ export default function Home() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC]">
-      {/* Barra Lateral com Logo e Módulos */}
+      {/* Barra Lateral com Logo e Módulos (com gaveta para celular) */}
       <Sidebar />
 
       {/* Área de Conteúdo Principal */}
@@ -33,8 +33,8 @@ export default function Home() {
           onNovoLeadClick={() => setLeadModalOpen(true)}
         />
 
-        {/* Corpo com Scroll */}
-        <main className="flex-1 overflow-y-auto p-8">
+        {/* Corpo com Scroll adaptado para celular (p-3 sm:p-5 md:p-8) */}
+        <main className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-8">
           {(activeTab === 'dashboard' || activeTab === 'relatorio-semanal') && <DashboardBIView />}
 
           {activeTab === 'tarefas' && (

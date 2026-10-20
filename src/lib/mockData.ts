@@ -12,7 +12,8 @@ import {
   ContaPagar,
   ContaReceber,
   ContaBancaria,
-  HistoricoAjusteSaldo
+  HistoricoAjusteSaldo,
+  ModeloMensagemTarefa
 } from '@/types';
 
 export const initialClientes: Cliente[] = [
@@ -4106,6 +4107,119 @@ export const initialProcedimentoTemplates: CRMProcedimentoTemplate[] = [
   }
 ];
 
+export const initialModelosMensagens: ModeloMensagemTarefa[] = [
+  {
+    id: 'mod-simples',
+    tipo_chave: 'simples_nacional',
+    nome: 'Tarefa do Simples Nacional (DAS)',
+    descricao: 'Disparada automaticamente ao concluir a apuração do Simples Nacional e anexar a guia DAS.',
+    categoria_tarefa: 'Fiscal',
+    palavras_chave: ['simples nacional', 'das', 'pgdas'],
+    texto_template: `📄 *Guia do Simples Nacional (DAS) - fin.up Consultoria*
+
+Olá, *{nome_contato}*!
+
+A apuração do *Simples Nacional* da empresa *{razao_social}* referente à competência *{competencia}* foi concluída com sucesso.
+
+📅 *Vencimento da Guia:* {vencimento_guia}
+💰 *Valor:* {valor_guia}
+📎 *Arquivo:* {nome_arquivo}
+
+🔗 *Acesse ou baixe a sua guia diretamente pelo link:*
+{link_guia}
+
+Favor programar o pagamento até a data de vencimento. Qualquer dúvida, estamos à disposição!`
+  },
+  {
+    id: 'mod-folha',
+    tipo_chave: 'folha_pagamento',
+    nome: 'Folha de Pagamento & Pró-Labore (FGTS / GPS / eSocial)',
+    descricao: 'Disparada ao concluir a folha de pagamento, pró-labore e emissão de guias previdenciárias e FGTS.',
+    categoria_tarefa: 'Pessoal',
+    palavras_chave: ['folha', 'fgts', 'gps', 'pró-labore', 'pro-labore', 'salario', 'inss'],
+    texto_template: `💼 *Folha de Pagamento & Encargos - fin.up Consultoria*
+
+Olá, *{nome_contato}*!
+
+Os encargos da Folha de Pagamento da empresa *{razao_social}* da competência *{competencia}* já estão disponíveis para liquidação.
+
+📅 *Vencimento da Guia:* {vencimento_guia}
+💰 *Valor:* {valor_guia}
+📎 *Arquivo:* {nome_arquivo}
+
+🔗 *Acesse ou baixe o documento pelo link:*
+{link_guia}
+
+Solicitamos que o comprovante seja enviado após a quitação. Conte sempre conosco!`
+  },
+  {
+    id: 'mod-dctfweb',
+    tipo_chave: 'dctfweb',
+    nome: 'DCTFWeb / Previdenciário (DARF Previdenciário)',
+    descricao: 'Disparada ao fechar a transmissão da DCTFWeb e emissão do DARF Numerado.',
+    categoria_tarefa: 'Fiscal',
+    palavras_chave: ['dctfweb', 'dctf', 'darf previdenciario'],
+    texto_template: `🏛️ *Guia DCTFWeb / Previdenciário - fin.up Consultoria*
+
+Olá, *{nome_contato}*!
+
+A transmissão da *DCTFWeb* da empresa *{razao_social}* (Competência *{competencia}*) foi realizada e a Guia Única está liberada.
+
+📅 *Vencimento da Guia:* {vencimento_guia}
+💰 *Valor:* {valor_guia}
+📎 *Arquivo:* {nome_arquivo}
+
+🔗 *Link seguro para download:*
+{link_guia}
+
+Mantenha suas certidões negativas em dia realizando o pagamento até o vencimento.`
+  },
+  {
+    id: 'mod-honorarios',
+    tipo_chave: 'honorarios',
+    nome: 'Honorários Contábeis & Mensalidades',
+    descricao: 'Mensagem de envio de cobrança mensal de honorários da fin.up.',
+    categoria_tarefa: 'Contábil',
+    palavras_chave: ['honorario', 'honorários', 'mensalidade'],
+    texto_template: `💵 *Honorários Contábeis - fin.up Consultoria*
+
+Olá, *{nome_contato}*!
+
+Informamos que a fatura de honorários da empresa *{razao_social}* referente à competência *{competencia}* está disponível.
+
+📅 *Vencimento:* {vencimento_guia}
+💰 *Valor:* {valor_guia}
+📎 *Arquivo:* {nome_arquivo}
+
+🔗 *Link para pagamento / 2ª via:*
+{link_guia}
+
+Agradecemos pela parceria contínua com a fin.up Consultoria!`
+  },
+  {
+    id: 'mod-padrao',
+    tipo_chave: 'padrao',
+    nome: 'Mensagem Padrão (Demais Obrigações & Guias)',
+    descricao: 'Modelo padrão utilizado para qualquer outra guia ou tarefa que não possua modelo específico.',
+    categoria_tarefa: 'Geral',
+    palavras_chave: [],
+    texto_template: `📄 *Guia de Pagamento Disponível - fin.up Consultoria*
+
+Olá, *{nome_contato}*!
+
+A obrigação *{nome_tarefa}* da empresa *{razao_social}* (Competência {competencia}) foi finalizada e o documento foi emitido.
+
+📅 *Vencimento da Guia:* {vencimento_guia}
+💰 *Valor:* {valor_guia}
+📎 *Arquivo:* {nome_arquivo}
+
+🔗 *Link para visualização e download:*
+{link_guia}
+
+Favor providenciar o pagamento até a data informada. Qualquer dúvida, estamos à disposição!`
+  }
+];
+
 export const initialWhatsAppConfig: WhatsAppConfig = {
   conectado: true,
   status: 'CONNECTED',
@@ -4120,7 +4234,9 @@ export const initialWhatsAppConfig: WhatsAppConfig = {
   api_url: 'https://evolution-api-production-ed7c.up.railway.app',
   api_key: '68A885CD-5F29-4269-949C-8AEB4D149393',
   instancia_id: '737a71b4-7795-45ad-99e5-7105c9ad3ecf',
-  ultima_sincronizacao: 'Hoje às 08:00'
+  ultima_sincronizacao: 'Hoje às 08:00',
+  dominio_publico: '',
+  modelos_mensagens: initialModelosMensagens
 };
 
 export const initialWhatsAppMensagens: WhatsAppMensagem[] = [

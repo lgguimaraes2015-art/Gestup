@@ -25,7 +25,8 @@ import {
   ArquivoEtapa,
   ConfiguracaoCobrancaEtapa,
   ContaBancaria,
-  HistoricoAjusteSaldo
+  HistoricoAjusteSaldo,
+  ModeloMensagemTarefa
 } from '@/types';
 import {
   initialClientes,
@@ -39,7 +40,8 @@ import {
   initialContasPagar,
   initialContasReceber,
   initialHonorarios,
-  initialContasBancarias
+  initialContasBancarias,
+  initialModelosMensagens
 } from '@/lib/mockData';
 
 interface AppContextType {
@@ -69,19 +71,27 @@ interface AppContextType {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   toggleSidebar: () => void;
+  mobileMenuOpen: boolean;
+  setMobileMenuOpen: (open: boolean) => void;
+  toggleMobileMenu: () => void;
 
   // Ações de Tarefas
   addTarefa: (tarefa: Omit<Tarefa, 'id' | 'created_at'>) => void;
   updateTarefa: (id: string, updates: Partial<Tarefa>) => void;
   deleteTarefa: (id: string) => void;
   moverTarefaStatus: (tarefaId: string, novoStatus: StatusTarefa) => void;
+  anexarArquivoTarefa: (tarefaId: string, arquivo: Omit<ArquivoEtapa, 'id' | 'data_upload'>) => void;
+  removerArquivoTarefa: (tarefaId: string, arquivoId: string) => void;
   concluirTarefa: (
     id: string,
     dadosGuia?: {
       ehPagamento: boolean;
       arquivoNome?: string;
+      arquivoConteudo?: string;
+      arquivoTamanho?: string;
       dataVencimento?: string;
       valor?: number;
+      mensagemPersonalizada?: string;
     }
   ) => void;
   prorrogarTarefa: (id: string, novoPrazoMeta: string, motivo: string) => void;
@@ -98,6 +108,18 @@ interface AppContextType {
   configurarCobrancaWhatsAppEtapa: (tarefaId: string, etapaId: string, config: ConfiguracaoCobrancaEtapa) => void;
   dispararCobrancaEtapaWhatsApp: (tarefaId: string, etapaId: string) => void;
 
+  // Modelos de Mensagens Personalizadas por Tarefa
+  modelosMensagens: ModeloMensagemTarefa[];
+  salvarModeloMensagem: (modelo: ModeloMensagemTarefa) => void;
+  restaurarModelosMensagensPadrao: () => void;
+  obterModeloMensagemParaTarefa: (tarefa: Tarefa) => ModeloMensagemTarefa;
+  formatarMensagemGuiaTarefa: (
+    tarefa: Tarefa,
+    dadosGuia: { dataVencimento?: string; valor?: number; arquivoNome?: string },
+    nomeContato?: string,
+    modeloCustomizado?: ModeloMensagemTarefa
+  ) => string;
+
   // Ações de Conexão WhatsApp & Automação
   conectarWhatsAppSimulado: (numero: string) => void;
   desconectarWhatsApp: () => void;
@@ -111,7 +133,8 @@ interface AppContextType {
     telefone: string,
     tipoNotificacao: WhatsAppMensagem['tipo_notificacao'],
     texto: string,
-    referenciaId?: string
+    referenciaId?: string,
+    options?: { media?: string; fileName?: string; mimeType?: string }
   ) => Promise<boolean>;
   dispararResumoMatinalEquipe: () => void;
   dispararCobrancaTarefa: (tarefaId: string) => void;
@@ -378,6 +401,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activeModule, setActiveModule] = useState<'operacional' | 'crm' | 'automacoes' | 'configuracoes'>('operacional');
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+
+  const toggleMobileMenu = () => setMobileMenuOpen(prev => !prev);
+
+  // Modelos de Mensagens Personalizadas
+  const [modelosMensagens, setModelosMensagens] = useState<ModeloMensagemTarefa[]>(initialModelosMensagens);
 
   // Carregar preferência do menu recolhível
   useEffect(() => {
@@ -482,8 +511,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           numero_conectado: numeroCorrigido,
           api_url: parsed.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
           api_key: keyCorrigida,
-          nome_instancia: parsed.nome_instancia || 'gestup'
+          nome_instancia: parsed.nome_instancia || 'gestup',
+          dominio_publico: parsed.dominio_publico || ''
         }));
+      }
+
+      // 6. Modelos de Mensagens Personalizadas
+      const savedModelos = localStorage.getItem('gestup_v2_modelos_mensagens');
+      if (savedModelos) {
+        try {
+          setModelosMensagens(JSON.parse(savedModelos));
+        } catch {}
       }
     } catch {}
   }, []);
@@ -669,13 +707,117 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Modelos de Mensagens por Tarefa
+  const salvarModeloMensagem = (modelo: ModeloMensagemTarefa) => {
+    setModelosMensagens(prev => {
+      const existe = prev.some(m => m.id === modelo.id);
+      const updated = existe ? prev.map(m => m.id === modelo.id ? modelo : m) : [...prev, modelo];
+      try {
+        localStorage.setItem('gestup_v2_modelos_mensagens', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const restaurarModelosMensagensPadrao = () => {
+    setModelosMensagens(initialModelosMensagens);
+    try {
+      localStorage.setItem('gestup_v2_modelos_mensagens', JSON.stringify(initialModelosMensagens));
+    } catch {}
+  };
+
+  const obterModeloMensagemParaTarefa = (tarefa: Tarefa): ModeloMensagemTarefa => {
+    const tituloLower = (tarefa.titulo || '').toLowerCase();
+    const depto = tarefa.categoria;
+
+    // 1. Procura por palavra-chave específica (ex: "simples nacional", "das")
+    const porPalavra = modelosMensagens.find(m =>
+      m.palavras_chave?.some(p => tituloLower.includes(p.toLowerCase()))
+    );
+    if (porPalavra) return porPalavra;
+
+    // 2. Procura por categoria
+    if (depto === 'Fiscal') {
+      const modFiscal = modelosMensagens.find(m => m.tipo_chave === 'simples_nacional' || m.categoria_tarefa === 'Fiscal');
+      if (modFiscal) return modFiscal;
+    } else if (depto === 'Pessoal') {
+      const modPessoal = modelosMensagens.find(m => m.tipo_chave === 'folha_pagamento' || m.categoria_tarefa === 'Pessoal');
+      if (modPessoal) return modPessoal;
+    } else if (depto === 'Contábil') {
+      const modContabil = modelosMensagens.find(m => m.tipo_chave === 'honorarios' || m.categoria_tarefa === 'Contábil');
+      if (modContabil) return modContabil;
+    }
+
+    // 3. Fallback para o modelo padrão geral
+    return modelosMensagens.find(m => m.tipo_chave === 'padrao') || modelosMensagens[0] || initialModelosMensagens[0];
+  };
+
+  const formatarMensagemGuiaTarefa = (
+    tarefa: Tarefa,
+    dadosGuia: { dataVencimento?: string; valor?: number; arquivoNome?: string },
+    nomeContato?: string,
+    modeloCustomizado?: ModeloMensagemTarefa
+  ): string => {
+    const modelo = modeloCustomizado || obterModeloMensagemParaTarefa(tarefa);
+    const cliente = clientes.find(c => c.id === tarefa.cliente_id);
+    const nomeEmpresa = cliente?.nome || tarefa.cliente_nome || 'Sua Empresa';
+    const dtRaw = dadosGuia.dataVencimento || '';
+    const vencFormatado = dtRaw.includes('-')
+      ? dtRaw.split('-').reverse().join('/')
+      : (dtRaw || 'A definir');
+    const valorFormatado = dadosGuia.valor
+      ? `R$ ${dadosGuia.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      : 'Conforme Documento';
+    const nomeArq = dadosGuia.arquivoNome || 'Guia_Pagamento.pdf';
+    const contato = nomeContato || cliente?.nome || 'Prezado Cliente';
+
+    const baseUrl = whatsAppConfig.dominio_publico || (typeof window !== 'undefined' ? window.location.origin : 'https://gestup.vercel.app');
+    const link = `${baseUrl}/portal/guia?id=${tarefa.id}&arquivo=${encodeURIComponent(nomeArq)}&comp=${encodeURIComponent(tarefa.competencia)}&cli=${encodeURIComponent(nomeEmpresa)}&venc=${encodeURIComponent(vencFormatado)}&val=${encodeURIComponent(dadosGuia.valor || '')}&tipo=${encodeURIComponent(tarefa.titulo)}`;
+
+    let texto = modelo.texto_template;
+    texto = texto.replace(/\{razao_social\}/g, nomeEmpresa);
+    texto = texto.replace(/\{empresa\}/g, nomeEmpresa);
+    texto = texto.replace(/\{competencia\}/g, tarefa.competencia || '10/2026');
+    texto = texto.replace(/\{vencimento_guia\}/g, vencFormatado);
+    texto = texto.replace(/\{valor_guia\}/g, valorFormatado);
+    texto = texto.replace(/\{nome_tarefa\}/g, tarefa.titulo);
+    texto = texto.replace(/\{obrigacao\}/g, tarefa.titulo);
+    texto = texto.replace(/\{nome_contato\}/g, contato);
+    texto = texto.replace(/\{link_guia\}/g, link);
+    texto = texto.replace(/\{nome_arquivo\}/g, nomeArq);
+
+    return texto;
+  };
+
+  const anexarArquivoTarefa = (tarefaId: string, arquivo: Omit<ArquivoEtapa, 'id' | 'data_upload'>) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const novoArq: ArquivoEtapa = {
+      ...arquivo,
+      id: `arq-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      data_upload: new Date().toISOString()
+    };
+    const listaAtual = tarefa.arquivos_anexos || [];
+    updateTarefa(tarefaId, { arquivos_anexos: [novoArq, ...listaAtual] });
+  };
+
+  const removerArquivoTarefa = (tarefaId: string, arquivoId: string) => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+    const lista = (tarefa.arquivos_anexos || []).filter(a => a.id !== arquivoId);
+    updateTarefa(tarefaId, { arquivos_anexos: lista });
+  };
+
   const concluirTarefa = (
     id: string,
     dadosGuia?: {
       ehPagamento: boolean;
       arquivoNome?: string;
+      arquivoConteudo?: string;
+      arquivoTamanho?: string;
       dataVencimento?: string;
       valor?: number;
+      mensagemPersonalizada?: string;
     }
   ) => {
     const tarefa = tarefas.find(t => t.id === id);
@@ -689,9 +831,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const clienteWhats = cliente?.whatsapp || cliente?.telefone || '';
       const clienteEmail = cliente?.email || '';
 
+      const baseUrl = whatsAppConfig.dominio_publico || (typeof window !== 'undefined' ? window.location.origin : 'https://gestup.vercel.app');
+      const nomeArquivoGuia = dadosGuia.arquivoNome || 'guia.pdf';
+      const linkPortalGuia = `${baseUrl}/portal/guia?id=${tarefa.id}&arquivo=${encodeURIComponent(nomeArquivoGuia)}&comp=${encodeURIComponent(tarefa.competencia)}&cli=${encodeURIComponent(cliente?.nome || tarefa.cliente_nome)}&venc=${encodeURIComponent(dadosGuia.dataVencimento)}&val=${encodeURIComponent(dadosGuia.valor || '')}&tipo=${encodeURIComponent(tarefa.titulo)}`;
+
       guiaInfo = {
-        arquivo_nome: dadosGuia.arquivoNome,
-        arquivo_url: `https://gestup.app/portal/guias/${encodeURIComponent(dadosGuia.arquivoNome)}`,
+        arquivo_nome: nomeArquivoGuia,
+        arquivo_url: linkPortalGuia,
+        arquivo_conteudo: dadosGuia.arquivoConteudo,
+        arquivo_tamanho: dadosGuia.arquivoTamanho,
         data_vencimento: dadosGuia.dataVencimento,
         valor: dadosGuia.valor,
         enviado_email: true,
@@ -705,43 +853,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (enviarWhats) {
         const contatosAlvo = cliente?.contatos_notificacao?.length
           ? cliente.contatos_notificacao
-          : [{ id: 'padrao', nome: cliente?.nome || 'Cliente', telefoneOuGrupo: clienteWhats, tipo: 'Individual', principal: true }];
-
-        const dataVencFormatada = dadosGuia.dataVencimento.split('-').reverse().join('/');
-        const valorFormatado = dadosGuia.valor
-          ? `💰 *Valor:* R$ ${dadosGuia.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`
-          : '';
-
-        const nomeArquivoGuia = dadosGuia.arquivoNome || 'guia.pdf';
+          : [{ id: 'padrao', nome: cliente?.nome || 'Cliente', telefoneOuGrupo: clienteWhats, tipo: 'Individual' as const, principal: true }];
 
         contatosAlvo.forEach(ct => {
-          const msgTexto = `📄 *Guia de Pagamento Disponível - fin.up Consultoria*\n\n` +
-            `Olá, *${ct.nome}*!\n\n` +
-            `A obrigação *${tarefa.titulo}* da empresa *${cliente?.nome || tarefa.cliente_nome}* (Competência ${tarefa.competencia}) foi concluída e a guia está liberada.\n\n` +
-            `📅 *Vencimento:* ${dataVencFormatada}\n` +
-            valorFormatado +
-            `📎 *Documento:* ${nomeArquivoGuia}\n\n` +
-            `🔗 *Acesse ou baixe a sua guia diretamente pelo link:*\n` +
-            `https://gestup.app/portal/guias/${encodeURIComponent(nomeArquivoGuia)}\n\n` +
-            `Favor providenciar o pagamento até o vencimento para evitar encargos. Estamos à disposição!`;
+          const msgTexto = dadosGuia.mensagemPersonalizada
+            ? dadosGuia.mensagemPersonalizada
+            : formatarMensagemGuiaTarefa(
+                tarefa,
+                {
+                  dataVencimento: dadosGuia.dataVencimento,
+                  valor: dadosGuia.valor,
+                  arquivoNome: nomeArquivoGuia
+                },
+                ct.nome
+              );
 
           enviarMensagemWhatsApp(
             'Cliente',
-            `${cliente?.nome} (${ct.nome})`,
+            `${cliente?.nome || tarefa.cliente_nome} (${ct.nome})`,
             ct.telefoneOuGrupo,
             'Documento Pendente',
             msgTexto,
-            tarefa.id
+            tarefa.id,
+            {
+              media: dadosGuia.arquivoConteudo,
+              fileName: nomeArquivoGuia
+            }
           );
         });
       }
+    }
+
+    const novosAnexos = [...(tarefa.arquivos_anexos || [])];
+    if (dadosGuia?.arquivoNome) {
+      novosAnexos.unshift({
+        id: `arq-${Date.now()}`,
+        nome: dadosGuia.arquivoNome,
+        url: guiaInfo?.arquivo_url || '#',
+        conteudo: dadosGuia.arquivoConteudo,
+        tamanho: dadosGuia.arquivoTamanho || '1.2 MB',
+        data_upload: new Date().toISOString()
+      });
     }
 
     updateTarefa(id, {
       status: 'Concluída',
       data_conclusao: new Date().toISOString().split('T')[0],
       eh_pagamento: dadosGuia?.ehPagamento || false,
-      guia_pagamento: guiaInfo
+      guia_pagamento: guiaInfo,
+      arquivos_anexos: novosAnexos
     });
   };
 
@@ -1344,7 +1504,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     telefone: string,
     tipoNotificacao: WhatsAppMensagem['tipo_notificacao'],
     texto: string,
-    referenciaId?: string
+    referenciaId?: string,
+    options?: { media?: string; fileName?: string; mimeType?: string }
   ): Promise<boolean> => {
     let cleanNumber = (telefone || '').replace(/\D/g, '');
     if (cleanNumber.length === 10 || cleanNumber.length === 11) {
@@ -1373,6 +1534,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({
           number: cleanNumber,
           text: texto,
+          media: options?.media,
+          fileName: options?.fileName,
+          mimeType: options?.mimeType,
           apiUrl: whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
           apiKey: whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393',
           instanceName: whatsAppConfig.nome_instancia || 'gestup'
@@ -1557,10 +1721,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         sidebarCollapsed,
         setSidebarCollapsed,
         toggleSidebar,
+        mobileMenuOpen,
+        setMobileMenuOpen,
+        toggleMobileMenu,
         addTarefa,
         updateTarefa,
         deleteTarefa,
         moverTarefaStatus,
+        anexarArquivoTarefa,
+        removerArquivoTarefa,
         concluirTarefa,
         prorrogarTarefa,
         adicionarComentarioTarefa,
@@ -1573,6 +1742,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         removerArquivoEtapa,
         configurarCobrancaWhatsAppEtapa,
         dispararCobrancaEtapaWhatsApp,
+        modelosMensagens,
+        salvarModeloMensagem,
+        restaurarModelosMensagensPadrao,
+        obterModeloMensagemParaTarefa,
+        formatarMensagemGuiaTarefa,
         conectarWhatsAppSimulado,
         desconectarWhatsApp,
         gerarQRCodeWhatsApp,

@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
-import { Departamento } from '@/types';
+import { Departamento, ModeloMensagemTarefa } from '@/types';
 import {
   Settings,
   Users,
@@ -31,7 +31,11 @@ import {
   Check,
   Copy,
   ExternalLink,
-  Key
+  Key,
+  Globe,
+  FileText,
+  RotateCcw,
+  Tag
 } from 'lucide-react';
 
 export function ConfiguracoesView() {
@@ -48,11 +52,26 @@ export function ConfiguracoesView() {
     verificarStatusWhatsAppReal,
     executarReguaManha08h,
     tarefas,
-    clientes
+    clientes,
+    modelosMensagens,
+    salvarModeloMensagem,
+    restaurarModelosMensagensPadrao
   } = useApp();
 
-  const [abaAtiva, setAbaAtiva] = useState<'colaboradores' | 'escritorio' | 'whatsapp'>('colaboradores');
+  const [abaAtiva, setAbaAtiva] = useState<'colaboradores' | 'escritorio' | 'modelos' | 'whatsapp'>('colaboradores');
   const [toastFeedback, setToastFeedback] = useState<string | null>(null);
+
+  // Estados dos Modelos de Mensagens
+  const [modeloSelecionadoId, setModeloSelecionadoId] = useState<string>('simples_nacional');
+  const [textosModelos, setTextosModelos] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const mapa: Record<string, string> = {};
+    modelosMensagens.forEach(m => {
+      mapa[m.id] = m.texto_template;
+    });
+    setTextosModelos(mapa);
+  }, [modelosMensagens]);
 
   // Estados de Teste e Conexão WhatsApp
   const [testeTelefone, setTesteTelefone] = useState('5519992080639');
@@ -62,6 +81,7 @@ export function ConfiguracoesView() {
   const [apiUrlInput, setApiUrlInput] = useState(whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app');
   const [apiKeyInput, setApiKeyInput] = useState(whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393');
   const [instanciaInput, setInstanciaInput] = useState(whatsAppConfig.nome_instancia || 'gestup');
+  const [dominioPublicoInput, setDominioPublicoInput] = useState(whatsAppConfig.dominio_publico || '');
   const [salvandoCredenciais, setSalvandoCredenciais] = useState(false);
 
   // Modal Novo Colaborador
@@ -91,37 +111,87 @@ export function ConfiguracoesView() {
     setNome('');
     setEmail('');
     setTelefone('');
+    setToastFeedback('👤 Colaborador adicionado à equipe com sucesso!');
+    setTimeout(() => setToastFeedback(null), 3000);
+  };
+
+  const modeloAtual = modelosMensagens.find(m => m.id === modeloSelecionadoId) || modelosMensagens[0];
+
+  const handleInserirTag = (tag: string) => {
+    if (!modeloAtual) return;
+    const textoAtual = textosModelos[modeloAtual.id] ?? modeloAtual.texto_template;
+    setTextosModelos(prev => ({
+      ...prev,
+      [modeloAtual.id]: textoAtual + ` {${tag}} `
+    }));
+  };
+
+  const handleSalvarModelo = (id: string) => {
+    const texto = textosModelos[id];
+    const target = modelosMensagens.find(m => m.id === id) || modeloAtual;
+    if (texto !== undefined && target) {
+      salvarModeloMensagem({
+        ...target,
+        texto_template: texto
+      });
+      setToastFeedback(`💾 Modelo de mensagem "${target.nome}" salvo com sucesso!`);
+      setTimeout(() => setToastFeedback(null), 3500);
+    }
+  };
+
+  const simularMensagemExemplo = (template: string) => {
+    return template
+      .replace(/\{razao_social\}/g, 'Padaria e Confeitaria Alvorada Ltda')
+      .replace(/\{competencia\}/g, '10/2026')
+      .replace(/\{vencimento_guia\}/g, '20/11/2026')
+      .replace(/\{valor_guia\}/g, 'R$ 1.450,80')
+      .replace(/\{nome_tarefa\}/g, 'Apuração do Simples Nacional (DAS)')
+      .replace(/\{nome_contato\}/g, 'Carlos Silva')
+      .replace(/\{nome_arquivo\}/g, 'DAS_10_2026_PADARIA_ALVORADA.pdf')
+      .replace(/\{link_guia\}/g, 'https://gestup.vercel.app/portal/guia?id=exemplo');
   };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
+      {/* Toast Feedback */}
+      {toastFeedback && (
+        <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-top-3">
+          <div className="w-8 h-8 rounded-full bg-brand-green/20 flex items-center justify-center text-brand-green shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold">{toastFeedback}</p>
+          </div>
+        </div>
+      )}
+
       {/* Topo de Configurações */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-200/80 shadow-subtle flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-800">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-800 shrink-0">
             <Settings className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Configurações Gerais do GestUp</h2>
-            <p className="text-xs text-slate-500">Parâmetros do escritório, equipe interna e regras do sistema</p>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900">Configurações Gerais do GestUp</h2>
+            <p className="text-xs text-slate-500">Parâmetros do escritório, equipe interna, modelos de mensagens e regras do sistema</p>
           </div>
         </div>
 
-        {/* Abas */}
-        <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 text-xs font-semibold">
+        {/* Abas com rolagem horizontal no mobile */}
+        <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 text-xs font-semibold overflow-x-auto max-w-full">
           <button
             onClick={() => setAbaAtiva('colaboradores')}
-            className={`px-4 py-2 rounded-xl transition-all ${
+            className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap ${
               abaAtiva === 'colaboradores'
                 ? 'bg-white text-brand-blue shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Equipe & Colaboradores ({colaboradores.length})
+            Equipe ({colaboradores.length})
           </button>
           <button
             onClick={() => setAbaAtiva('escritorio')}
-            className={`px-4 py-2 rounded-xl transition-all ${
+            className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap ${
               abaAtiva === 'escritorio'
                 ? 'bg-white text-brand-blue shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -130,8 +200,19 @@ export function ConfiguracoesView() {
             Regras fin.up & Sócios
           </button>
           <button
+            onClick={() => setAbaAtiva('modelos')}
+            className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+              abaAtiva === 'modelos'
+                ? 'bg-white text-brand-blue shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <span>Modelos de Mensagens</span>
+          </button>
+          <button
             onClick={() => setAbaAtiva('whatsapp')}
-            className={`px-4 py-2 rounded-xl transition-all ${
+            className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap ${
               abaAtiva === 'whatsapp'
                 ? 'bg-white text-brand-blue shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -175,7 +256,7 @@ export function ConfiguracoesView() {
                   <div className="mt-3 space-y-1 text-xs text-slate-600">
                     <div className="flex items-center gap-1.5">
                       <Mail className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{col.email}</span>
+                      <span className="truncate">{col.email}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Phone className="w-3.5 h-3.5 text-slate-400" />
@@ -231,7 +312,192 @@ export function ConfiguracoesView() {
         </div>
       )}
 
-      {/* ABA 3: WHATSAPP & CONEXÃO OFICIAL */}
+      {/* ABA 3: MODELOS DE MENSAGENS PERSONALIZADAS POR TAREFA */}
+      {abaAtiva === 'modelos' && (
+        <div className="space-y-6">
+          {/* Banner Explicativo */}
+          <div className="bg-gradient-to-r from-blue-50 via-indigo-50/40 to-white p-5 rounded-3xl border border-blue-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-brand-blue text-white flex items-center justify-center shrink-0 shadow-md">
+                <MessageSquare className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <span>Mensagens Padrão Personalizadas por Tipo de Tarefa</span>
+                  <span className="bg-brand-green/10 text-brand-green text-[10px] font-bold px-2 py-0.5 rounded-full border border-brand-green/20">
+                    Disparo Automático
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
+                  Defina o texto exato que seu cliente receberá via WhatsApp e E-mail ao concluir cada obrigação (Simples Nacional, Folha, DCTFWeb, etc.).
+                  O GestUp preenche automaticamente as informações de <strong>Competência</strong>, <strong>Vencimento da Guia</strong> e <strong>Razão Social</strong>.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm('Deseja restaurar todos os modelos para os textos padrão originais da fin.up?')) {
+                  restaurarModelosMensagensPadrao();
+                  setToastFeedback('🔄 Modelos de mensagens restaurados com sucesso!');
+                  setTimeout(() => setToastFeedback(null), 3000);
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-all shadow-2xs"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+              <span>Restaurar Padrão fin.up</span>
+            </button>
+          </div>
+
+          {/* Dicionário de Tags Dinâmicas */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+              <Tag className="w-3.5 h-3.5 text-brand-blue" />
+              <span>Variáveis Dinâmicas Disponíveis (clique para inserir no modelo selecionado):</span>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              {[
+                { tag: 'razao_social', desc: 'Razão Social / Nome da Empresa' },
+                { tag: 'competencia', desc: 'Mês/Ano de Apuração (ex: 10/2026)' },
+                { tag: 'vencimento_guia', desc: 'Data de Vencimento da Guia' },
+                { tag: 'valor_guia', desc: 'Valor a Pagar (R$)' },
+                { tag: 'link_guia', desc: 'Link Seguro para Baixar a Guia' },
+                { tag: 'nome_tarefa', desc: 'Nome da Tarefa' },
+                { tag: 'nome_contato', desc: 'Nome do Destinatário' },
+                { tag: 'nome_arquivo', desc: 'Nome do Arquivo PDF Anexado' }
+              ].map(item => (
+                <button
+                  key={item.tag}
+                  type="button"
+                  onClick={() => handleInserirTag(item.tag)}
+                  title={`Inserir {${item.tag}} no texto`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-50 hover:bg-blue-50 hover:border-brand-blue border border-slate-200 text-slate-700 transition-all font-mono text-[11px]"
+                >
+                  <span className="font-bold text-brand-blue">{`{${item.tag}}`}</span>
+                  <span className="text-slate-400 font-sans text-[10px]">({item.desc})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Seletor de Modelo e Editor */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Coluna 1: Lista de Modelos (4 colunas) */}
+            <div className="lg:col-span-4 space-y-2">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
+                Tipos de Tarefas & Obrigações
+              </h4>
+              <div className="space-y-2">
+                {modelosMensagens.map(modelo => {
+                  const isSelected = modelo.id === modeloAtual?.id;
+                  return (
+                    <button
+                      key={modelo.id}
+                      type="button"
+                      onClick={() => setModeloSelecionadoId(modelo.id)}
+                      className={`w-full text-left p-3.5 rounded-2xl border transition-all ${
+                        isSelected
+                          ? 'bg-blue-50 border-brand-blue shadow-xs ring-1 ring-brand-blue/30'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-slate-900">{modelo.nome}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600">
+                          {modelo.categoria_tarefa}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                        {modelo.descricao}
+                      </p>
+                      <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-400">
+                        <span>Gatilhos:</span>
+                        <span className="italic truncate font-mono">{modelo.palavras_chave.slice(0, 3).join(', ')}...</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Coluna 2: Editor e Preview em Tempo Real (8 colunas) */}
+            <div className="lg:col-span-8 space-y-4">
+              {modeloAtual && (
+                <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-subtle space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate-100">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                        <span>{modeloAtual.nome}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-brand-blue">
+                          {modeloAtual.tipo_chave}
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">{modeloAtual.descricao}</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSalvarModelo(modeloAtual.id)}
+                      className="px-4 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all shrink-0"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Salvar Este Modelo</span>
+                    </button>
+                  </div>
+
+                  {/* Campo Textarea do Modelo */}
+                  <div>
+                    <label className="block font-semibold text-xs text-slate-700 mb-1.5">
+                      Conteúdo da Mensagem Padrão:
+                    </label>
+                    <textarea
+                      rows={9}
+                      value={textosModelos[modeloAtual.id] ?? modeloAtual.texto_template}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setTextosModelos(prev => ({
+                          ...prev,
+                          [modeloAtual.id]: val
+                        }));
+                      }}
+                      className="w-full px-3.5 py-3 rounded-2xl border border-slate-200 font-sans text-xs text-slate-800 leading-relaxed focus:ring-2 focus:ring-brand-blue focus:outline-none bg-slate-50/50"
+                      placeholder="Escreva a mensagem personalizada usando as variáveis dinâmicas..."
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
+                      <span>Dica: Use quebras de linha normais e emojis para tornar o texto amigável.</span>
+                      <span>{(textosModelos[modeloAtual.id] ?? modeloAtual.texto_template).length} caracteres</span>
+                    </p>
+                  </div>
+
+                  {/* Preview Simulado do WhatsApp */}
+                  <div className="pt-2 border-t border-slate-100 space-y-2">
+                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4 text-brand-green" />
+                      <span>Pré-visualização Real no WhatsApp do Cliente:</span>
+                    </span>
+
+                    <div className="p-4 rounded-2xl bg-[#EFEAE2] border border-[#DAD3C8] max-w-lg shadow-inner">
+                      <div className="bg-white p-3.5 rounded-2xl rounded-tl-xs shadow-xs text-xs text-slate-800 leading-relaxed space-y-2 relative">
+                        <p className="whitespace-pre-line">
+                          {simularMensagemExemplo(textosModelos[modeloAtual.id] ?? modeloAtual.texto_template)}
+                        </p>
+                        <div className="flex justify-end items-center gap-1 text-[9px] text-slate-400 pt-1">
+                          <span>09:41</span>
+                          <span className="text-blue-500 font-bold">✓✓</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ABA 4: WHATSAPP & CONEXÃO OFICIAL */}
       {abaAtiva === 'whatsapp' && (() => {
         // Coleta todas as etapas ativas no sistema com cobrança agendada para as 08:00h
         const etapasFila08h: {
@@ -248,13 +514,20 @@ export function ConfiguracoesView() {
           if (t.eh_processo && t.etapas_processo) {
             t.etapas_processo.forEach(e => {
               if (e.cobrar_whatsapp && !e.concluida) {
+                const cliente = clientes.find(c => c.id === t.cliente_id);
+                const tels: string[] = [];
+                if (e.configuracao_cobranca?.telefones?.length) {
+                  tels.push(...e.configuracao_cobranca.telefones);
+                }
+                if (tels.length === 0 && cliente?.whatsapp) tels.push(cliente.whatsapp);
+
                 etapasFila08h.push({
                   tarefaId: t.id,
                   tarefaTitulo: t.titulo,
-                  clienteNome: t.cliente_nome,
+                  clienteNome: cliente?.nome || t.cliente_nome,
                   etapaTitulo: e.titulo,
-                  dataLimite: e.data_limite,
-                  telefones: e.configuracao_cobranca?.telefones?.filter(Boolean) || [],
+                  dataLimite: e.data_limite || t.data_prazo_legal || 'A definir',
+                  telefones: tels,
                   frequencia: e.configuracao_cobranca?.frequencia || 'Diariamente'
                 });
               }
@@ -264,249 +537,172 @@ export function ConfiguracoesView() {
 
         return (
           <div className="space-y-6">
-            {toastFeedback && (
-              <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-950 font-bold text-xs rounded-2xl flex items-center gap-2 shadow-sm animate-in fade-in">
-                <CheckCircle2 className="w-4 h-4 text-brand-green" />
-                <span>{toastFeedback}</span>
-              </div>
-            )}
-
-            {/* 1. TUTORIAL PASSO A PASSO DIDÁTICO */}
-            <div className="bg-gradient-to-br from-emerald-50/90 via-teal-50/50 to-white p-6 rounded-3xl border border-emerald-200/90 shadow-subtle space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-brand-green text-white flex items-center justify-center shadow-md">
-                  <Smartphone className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900">Como Vincular o WhatsApp ao GestUp (Passo a Passo)</h3>
-                  <p className="text-xs text-slate-600">
-                    Siga o guia rápido para conectar o aparelho do escritório e habilitar os disparos automáticos das 08:00h
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-                <div className="p-3.5 bg-white/90 rounded-2xl border border-emerald-100 shadow-2xs space-y-1.5">
-                  <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-xs font-black flex items-center justify-center">
-                    1
-                  </span>
-                  <h4 className="font-bold text-xs text-slate-900">Abra o WhatsApp</h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    No seu smartphone, abra o WhatsApp (comum ou WhatsApp Business) do número do escritório.
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-white/90 rounded-2xl border border-emerald-100 shadow-2xs space-y-1.5">
-                  <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-xs font-black flex items-center justify-center">
-                    2
-                  </span>
-                  <h4 className="font-bold text-xs text-slate-900">Aparelhos Conectados</h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Toque nos <strong>3 pontinhos</strong> (Android) ou em <strong>Configurações</strong> (iPhone) e escolha <strong>Aparelhos Conectados</strong>.
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-white/90 rounded-2xl border border-emerald-100 shadow-2xs space-y-1.5">
-                  <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-xs font-black flex items-center justify-center">
-                    3
-                  </span>
-                  <h4 className="font-bold text-xs text-slate-900">Conectar um Aparelho</h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Toque no botão verde <strong>Conectar um Aparelho</strong> (confirme com biometria ou senha se solicitado).
-                  </p>
-                </div>
-
-                <div className="p-3.5 bg-white/90 rounded-2xl border border-emerald-100 shadow-2xs space-y-1.5">
-                  <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-xs font-black flex items-center justify-center">
-                    4
-                  </span>
-                  <h4 className="font-bold text-xs text-slate-900">Aponte para o QR Code</h4>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Aponte a câmera para o QR Code gerado abaixo. A sincronização ocorrerá imediatamente!
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. CENTRAL DE CONEXÃO & QR CODE INTERATIVO */}
+            {/* 1. STATUS E CONEXÃO DO WHATSAPP */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">Central de Conexão do Aparelho</h3>
-                  <p className="text-xs text-slate-500">
-                    Sessão criptografada de envio automático via {whatsAppConfig.api_provider}
-                  </p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                    whatsAppConfig.conectado ? 'bg-emerald-50 text-brand-green' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    {whatsAppConfig.conectado ? <Wifi className="w-6 h-6" /> : <WifiOff className="w-6 h-6" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-sm text-slate-900">Integração WhatsApp Oficial fin.up</h3>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        whatsAppConfig.conectado
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {whatsAppConfig.conectado ? 'Conectado e Operacional' : 'Aguardando Pareamento'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {whatsAppConfig.conectado
+                        ? `Número autenticado: ${whatsAppConfig.numero_conectado || '+55 (19) 99208-0639'}`
+                        : 'Conecte seu WhatsApp corporativo fin.up para disparar guias e cobranças automáticas'}
+                    </p>
+                  </div>
                 </div>
 
-                {whatsAppConfig.conectado ? (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-brand-green border border-emerald-300 text-xs font-bold shadow-2xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                    <span>Conectado & Sincronizado</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold">
-                    <WifiOff className="w-3.5 h-3.5" />
-                    <span>Aparelho Desconectado</span>
-                  </span>
-                )}
-              </div>
-
-              {/* Bloco de Estado: Conectado vs Desconectado */}
-              {whatsAppConfig.conectado ? (
-                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-                    <div className="p-3 bg-white rounded-xl border border-slate-200">
-                      <span className="text-slate-400 font-bold uppercase text-[10px] block">Número Vinculado</span>
-                      <p className="font-extrabold text-slate-900 text-sm mt-1">{whatsAppConfig.numero_conectado || '+55 (19) 99208-0639'}</p>
-                      <span className="text-[10px] text-brand-green font-semibold">✓ Linha Autorizada</span>
-                    </div>
-
-                    <div className="p-3 bg-white rounded-xl border border-slate-200">
-                      <span className="text-slate-400 font-bold uppercase text-[10px] block">Nome da Instância</span>
-                      <p className="font-extrabold text-slate-900 text-sm mt-1">{whatsAppConfig.nome_instancia}</p>
-                      <span className="text-[10px] text-slate-500">Ambiente de Produção</span>
-                    </div>
-
-                    <div className="p-3 bg-white rounded-xl border border-slate-200">
-                      <span className="text-slate-400 font-bold uppercase text-[10px] block">Provedor Ativo</span>
-                      <p className="font-extrabold text-slate-900 text-sm mt-1">{whatsAppConfig.api_provider}</p>
-                      <span className="text-[10px] text-indigo-600 font-semibold">Suporte a Grupos e Contatos</span>
-                    </div>
-
-                    <div className="p-3 bg-white rounded-xl border border-slate-200">
-                      <span className="text-slate-400 font-bold uppercase text-[10px] block">Disparo Matinal Fixo</span>
-                      <p className="font-extrabold text-slate-900 text-sm mt-1">Às 08:00h da Manhã</p>
-                      <span className="text-[10px] text-brand-green font-semibold">Robô Agendado</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex items-center justify-between flex-wrap gap-2 text-xs">
-                    <span className="text-slate-500">
-                      Última sincronização com a rede: <strong>{whatsAppConfig.ultima_sincronizacao || 'Hoje às 08:00'}</strong>
-                    </span>
-
-                    <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {whatsAppConfig.conectado ? (
+                    <>
                       <button
                         type="button"
                         onClick={async () => {
-                          setToastFeedback('🔍 Verificando status da sessão no Railway...');
-                          const st = await verificarStatusWhatsAppReal();
-                          if (st === 'open') {
-                            setToastFeedback('🟢 WhatsApp Conectado e Operacional no Railway! Sessão: ABERTA');
+                          setToastFeedback('🔍 Verificando status na Evolution API...');
+                          const status = await verificarStatusWhatsAppReal();
+                          if (status === 'open') {
+                            setToastFeedback('🟢 Conexão confirmada com a Evolution API! Instância ativa.');
                           } else {
-                            setToastFeedback(`⚠️ Status atual: ${st}. Se necessário, reconecte o QR Code.`);
+                            setToastFeedback(`⚠️ Instância não encontrada ou desconectada na Evolution API (Status: ${status}).`);
                           }
                           setTimeout(() => setToastFeedback(null), 5000);
                         }}
-                        className="px-3.5 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs"
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all flex items-center gap-1.5"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Testar Conexão em Tempo Real</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          gerarQRCodeWhatsApp();
-                          setToastFeedback('📸 Gerando novo QR Code para leitura...');
-                          setTimeout(() => setToastFeedback(null), 3000);
-                        }}
-                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-all"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Reconectar / Ler Novo QR Code</span>
+                        <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Verificar Status Real</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => {
                           desconectarWhatsApp();
-                          setToastFeedback('🔴 Aparelho desconectado do GestUp.');
+                          setToastFeedback('🔌 Sessão desconectada.');
                           setTimeout(() => setToastFeedback(null), 3000);
                         }}
-                        className="px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-bold text-xs flex items-center gap-1.5 transition-all"
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 transition-all"
                       >
-                        <WifiOff className="w-3.5 h-3.5" />
-                        <span>Desconectar Aparelho</span>
+                        Desconectar
                       </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* ESTADO DESCONECTADO OU MODO QR CODE */
-                <div className="p-6 rounded-2xl bg-amber-50/50 border border-amber-200 flex flex-col md:flex-row items-center justify-between gap-6">
-                  <div className="space-y-3 max-w-md">
-                    <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
-                      <AlertTriangle className="w-5 h-5 text-amber-600" />
-                      <span>Conecte o WhatsApp para Habilitar os Envios</span>
-                    </div>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Para que o robô do GestUp consiga enviar lembretes de etapas, cobranças de honorários e guias com link, conecte o aparelho escaneando o QR Code ao lado.
-                    </p>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setToastFeedback('📱 Gerando QR Code de conexão...');
+                          gerarQRCodeWhatsApp();
+                          setToastFeedback('📸 Aponte a câmera do WhatsApp para o QR Code abaixo para conectar.');
+                          setTimeout(() => setToastFeedback(null), 5000);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition-all"
+                      >
+                        <QrCode className="w-4 h-4" />
+                        <span>Gerar QR Code de Conexão</span>
+                      </button>
 
-                    <div className="space-y-2 pt-1">
-                      <label className="block text-xs font-bold text-slate-700">Número que será vinculado:</label>
-                      <input
-                        type="text"
-                        value={numeroParaConectar}
-                        onChange={e => setNumeroParaConectar(e.target.value)}
-                        placeholder="+55 (19) 99208-0639"
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 text-xs"
-                      />
-                    </div>
-
-                    <div className="pt-2 flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           conectarWhatsAppSimulado(numeroParaConectar);
-                          setToastFeedback('🎉 WhatsApp vinculado e conectado com sucesso!');
+                          setToastFeedback('✅ WhatsApp conectado em modo direto para testes!');
                           setTimeout(() => setToastFeedback(null), 4000);
                         }}
-                        className="px-4 py-2.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition-all"
+                        className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all"
                       >
-                        <Check className="w-4 h-4" />
-                        <span>Simular Leitura do Celular (Conectar Agora)</span>
+                        Ativar Conexão Direta
                       </button>
-                    </div>
-                  </div>
+                    </>
+                  )}
+                </div>
+              </div>
 
-                  {/* QR CODE ILUSTRADO REALISTA */}
-                  <div className="bg-white p-5 rounded-3xl border-2 border-emerald-300 shadow-lg text-center space-y-2">
-                    <div className="w-48 h-48 mx-auto bg-slate-900 p-2.5 rounded-2xl flex items-center justify-center relative overflow-hidden group">
-                      {/* Simulação de Matriz de QR Code com Logo WhatsApp no Centro */}
-                      <div className="w-full h-full bg-white rounded-xl p-2 flex flex-col justify-between">
-                        <div className="flex justify-between">
-                          <div className="w-8 h-8 border-4 border-slate-900 rounded-sm p-1 flex items-center justify-center">
-                            <div className="w-3 h-3 bg-slate-900 rounded-xs" />
-                          </div>
-                          <div className="w-8 h-8 border-4 border-slate-900 rounded-sm p-1 flex items-center justify-center">
-                            <div className="w-3 h-3 bg-slate-900 rounded-xs" />
-                          </div>
-                        </div>
-                        <div className="w-10 h-10 mx-auto rounded-full bg-brand-green text-white flex items-center justify-center shadow-md">
-                          <MessageSquare className="w-5 h-5 fill-current" />
-                        </div>
-                        <div className="flex justify-between">
-                          <div className="w-8 h-8 border-4 border-slate-900 rounded-sm p-1 flex items-center justify-center">
-                            <div className="w-3 h-3 bg-slate-900 rounded-xs" />
-                          </div>
-                          <div className="w-6 h-6 bg-slate-900 rounded-sm" />
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-[11px] font-bold text-slate-700">Aponte a câmera do WhatsApp aqui</p>
-                    <span className="text-[10px] text-slate-400 block">Sessão protegida por criptografia</span>
+              {/* QR Code Exibido se disponível */}
+              {!whatsAppConfig.conectado && whatsAppConfig.qr_code && (
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col items-center justify-center space-y-3">
+                  <div className="p-3 bg-white rounded-2xl shadow-md border border-slate-200">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={whatsAppConfig.qr_code}
+                      alt="QR Code WhatsApp"
+                      className="w-48 h-48 object-contain"
+                    />
                   </div>
+                  <p className="text-xs text-slate-600 font-medium text-center">
+                    Abra o WhatsApp no celular {numeroParaConectar} &gt; <strong>Aparelhos conectados</strong> &gt; <strong>Conectar um aparelho</strong>
+                  </p>
                 </div>
               )}
+            </div>
+
+            {/* 2. CONFIGURAÇÃO DO DOMÍNIO PÚBLICO / LINKS DE GUIAS */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Domínio Público do Portal / Links das Guias</h3>
+                  <p className="text-xs text-slate-500">
+                    Endereço público oficial que os clientes acessarão para abrir e baixar as guias anexadas
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    URL do Portal do Cliente (Vercel ou Domínio Próprio)
+                  </label>
+                  <input
+                    type="text"
+                    value={dominioPublicoInput}
+                    onChange={e => setDominioPublicoInput(e.target.value)}
+                    placeholder="Ex: https://meu-gestup.vercel.app (deixe vazio para usar a URL atual do navegador)"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-mono text-xs"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Se estiver em branco, o sistema usará automaticamente o endereço onde você estiver navegando (ex: localhost ou seu link da Vercel).
+                  </p>
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      atualizarWhatsAppConfig({
+                        dominio_publico: dominioPublicoInput.trim()
+                      });
+                      setToastFeedback('🌐 Domínio público das guias atualizado com sucesso!');
+                      setTimeout(() => setToastFeedback(null), 3000);
+                    }}
+                    className="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Salvar Domínio</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* 3. PARÂMETROS DAS 08:00H & FILA DE PROCESSOS MONITORADOS */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
                     <Clock className="w-5 h-5" />
                   </div>
                   <div>
@@ -602,11 +798,11 @@ export function ConfiguracoesView() {
               </div>
             </div>
 
-            {/* CREDENCIAIS DA EVOLUTION API (RAILWAY) */}
+            {/* 4. CREDENCIAIS DA EVOLUTION API (RAILWAY) */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-brand-blue/10 text-brand-blue flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-2xl bg-brand-blue/10 text-brand-blue flex items-center justify-center shrink-0">
                     <Key className="w-5 h-5" />
                   </div>
                   <div>
@@ -682,10 +878,10 @@ export function ConfiguracoesView() {
               </div>
             </div>
 
-            {/* 4. SANDBOX / TESTE DE DISPARO IMEDIATO */}
+            {/* 5. SANDBOX / TESTE DE DISPARO IMEDIATO */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-brand-green/10 text-brand-green flex items-center justify-center">
+                <div className="w-10 h-10 rounded-2xl bg-brand-green/10 text-brand-green flex items-center justify-center shrink-0">
                   <Send className="w-5 h-5" />
                 </div>
                 <div>
@@ -744,7 +940,7 @@ export function ConfiguracoesView() {
               </div>
             </div>
 
-            {/* 5. HISTÓRICO DOS ÚLTIMOS DISPAROS */}
+            {/* 6. HISTÓRICO DOS ÚLTIMOS DISPAROS */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-subtle space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">

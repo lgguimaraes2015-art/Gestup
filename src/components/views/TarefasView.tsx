@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
   Tarefa,
@@ -78,8 +78,18 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     anexarArquivoEtapa,
     removerArquivoEtapa,
     configurarCobrancaWhatsAppEtapa,
-    dispararCobrancaEtapaWhatsApp
+    dispararCobrancaEtapaWhatsApp,
+    obterModeloMensagemParaTarefa,
+    formatarMensagemGuiaTarefa,
+    anexarArquivoTarefa,
+    removerArquivoTarefa,
+    modelosMensagens
   } = useApp();
+
+  // Referências para Inputs de Arquivos Reais
+  const guiaFileInputRef = useRef<HTMLInputElement>(null);
+  const etapaFileInputRef = useRef<HTMLInputElement>(null);
+  const tarefaGeralFileInputRef = useRef<HTMLInputElement>(null);
 
   // Estados de Controle de Visualização e Filtros
   const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista');
@@ -102,12 +112,18 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   const [novoComentarioTexto, setNovoComentarioTexto] = useState('');
   const [novoComentarioAutor, setNovoComentarioAutor] = useState(colaboradores[0]?.nome || 'Guilherme (Gestor)');
 
-  // Modal Inteligente de Conclusão com Guia de Pagamento
+  // Modal Inteligente de Conclusão com Guia de Pagamento & Arquivos Reais
   const [concluirModalTarefa, setConcluirModalTarefa] = useState<Tarefa | null>(null);
   const [concluirEhPagamento, setConcluirEhPagamento] = useState<'sim' | 'nao'>('sim');
   const [concluirDataVencimento, setConcluirDataVencimento] = useState<string>('');
   const [concluirValor, setConcluirValor] = useState<string>('');
   const [concluirArquivoNome, setConcluirArquivoNome] = useState<string>('');
+  const [concluirArquivoConteudo, setConcluirArquivoConteudo] = useState<string>('');
+  const [concluirArquivoTamanho, setConcluirArquivoTamanho] = useState<string>('');
+  const [concluirMensagemCustom, setConcluirMensagemCustom] = useState<string>('');
+  const [concluirEditandoMensagem, setConcluirEditandoMensagem] = useState<boolean>(false);
+  const [concluirMensagemPreview, setConcluirMensagemPreview] = useState<string>('');
+  const [isDraggingGuia, setIsDraggingGuia] = useState<boolean>(false);
 
   // NOVO: Gestão de Processos & Etapas
   const [processoModalTarefa, setProcessoModalTarefa] = useState<Tarefa | null>(null);
@@ -131,6 +147,8 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   // NOVO: Modal / Formulário rápido de anexo por etapa
   const [modalAnexoEtapa, setModalAnexoEtapa] = useState<{ tarefaId: string; etapaId: string } | null>(null);
   const [novoArquivoNome, setNovoArquivoNome] = useState('');
+  const [novoEtapaArquivoConteudo, setNovoEtapaArquivoConteudo] = useState<string>('');
+  const [novoEtapaArquivoTamanho, setNovoEtapaArquivoTamanho] = useState<string>('');
 
   // Estados do Formulário de Nova Tarefa
   const [novoTitulo, setNovoTitulo] = useState('');
@@ -400,32 +418,126 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     setTimeout(() => setFeedbackToast(null), 4000);
   };
 
+  // Formatador de bytes legível
+  const formatarTamanhoBytes = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  // Handler de seleção de arquivo da Guia (PDF)
+  const handleArquivoGuiaChange = (file: File) => {
+    setConcluirArquivoNome(file.name);
+    setConcluirArquivoTamanho(formatarTamanhoBytes(file.size));
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setConcluirArquivoConteudo(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handler de seleção de arquivo da Etapa
+  const handleArquivoEtapaChange = (file: File) => {
+    setNovoArquivoNome(file.name);
+    setNovoEtapaArquivoTamanho(formatarTamanhoBytes(file.size));
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setNovoEtapaArquivoConteudo(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handler de seleção de arquivo geral para a Tarefa
+  const handleArquivoGeralTarefaChange = (tarefaId: string, file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        anexarArquivoTarefa(tarefaId, {
+          nome: file.name,
+          tamanho: formatarTamanhoBytes(file.size),
+          url: reader.result,
+          conteudo: reader.result
+        });
+        setFeedbackToast(`📎 Arquivo "${file.name}" anexado à tarefa com sucesso!`);
+        setTimeout(() => setFeedbackToast(null), 3000);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Salvar anexo real na etapa do processo
   const handleSalvarAnexoEtapa = (e: React.FormEvent) => {
     e.preventDefault();
     if (!modalAnexoEtapa || !novoArquivoNome) return;
     const nomeFormatado = novoArquivoNome.includes('.') ? novoArquivoNome : `${novoArquivoNome}.pdf`;
     anexarArquivoEtapa(modalAnexoEtapa.tarefaId, modalAnexoEtapa.etapaId, {
       nome: nomeFormatado,
-      url: '#',
-      tamanho: '1.2 MB'
+      url: novoEtapaArquivoConteudo || '#',
+      tamanho: novoEtapaArquivoTamanho || '1.2 MB',
+      conteudo: novoEtapaArquivoConteudo || undefined
     });
     setModalAnexoEtapa(null);
     setNovoArquivoNome('');
+    setNovoEtapaArquivoConteudo('');
+    setNovoEtapaArquivoTamanho('');
+    if (etapaFileInputRef.current) etapaFileInputRef.current.value = '';
     setFeedbackToast('📎 Arquivo anexado à etapa com sucesso!');
     setTimeout(() => setFeedbackToast(null), 3000);
   };
 
-  // Abrir Modal Inteligente de Conclusão de Tarefa
+  // Abrir Modal Inteligente de Conclusão de Tarefa com Guia & Template Customizado
   const handleIniciarConclusao = (tarefa: Tarefa) => {
     setConcluirModalTarefa(tarefa);
     setConcluirEhPagamento('sim');
-    setConcluirDataVencimento(tarefa.data_prazo_legal || new Date().toISOString().split('T')[0]);
+    const dtVenc = tarefa.data_prazo_legal || new Date().toISOString().split('T')[0];
+    setConcluirDataVencimento(dtVenc);
     setConcluirValor('');
+    setConcluirArquivoConteudo('');
+    setConcluirArquivoTamanho('');
+    setConcluirEditandoMensagem(false);
+
     const siglaDoc = tarefa.categoria === 'Fiscal' ? 'DAS' : tarefa.categoria === 'Pessoal' ? 'GPS' : 'GUIA';
     const compClean = (tarefa.competencia || '10_2026').replace('/', '_');
     const cliClean = (tarefa.cliente_nome || 'CLIENTE').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
-    setConcluirArquivoNome(`${siglaDoc}_${compClean}_${cliClean}.pdf`);
+    const nomeSugerido = `${siglaDoc}_${compClean}_${cliClean}.pdf`;
+    setConcluirArquivoNome(nomeSugerido);
+
+    const msgInicial = formatarMensagemGuiaTarefa(
+      tarefa,
+      {
+        dataVencimento: dtVenc,
+        valor: undefined,
+        arquivoNome: nomeSugerido
+      },
+      'Cliente'
+    );
+    setConcluirMensagemPreview(msgInicial);
+    setConcluirMensagemCustom(msgInicial);
   };
+
+  // Atualização dinâmica da prévia da mensagem sempre que os campos da guia mudarem
+  useEffect(() => {
+    if (concluirModalTarefa && concluirEhPagamento === 'sim') {
+      const valorNum = concluirValor ? parseFloat(concluirValor.replace(',', '.')) : undefined;
+      const msgAtualizada = formatarMensagemGuiaTarefa(
+        concluirModalTarefa,
+        {
+          dataVencimento: concluirDataVencimento,
+          valor: valorNum,
+          arquivoNome: concluirArquivoNome || 'Guia_Pagamento.pdf'
+        },
+        'Cliente'
+      );
+      setConcluirMensagemPreview(msgAtualizada);
+      if (!concluirEditandoMensagem) {
+        setConcluirMensagemCustom(msgAtualizada);
+      }
+    }
+  }, [concluirModalTarefa, concluirEhPagamento, concluirDataVencimento, concluirValor, concluirArquivoNome, formatarMensagemGuiaTarefa, concluirEditandoMensagem]);
 
   // Confirmar Conclusão com Guia e Notificações Automáticas
   const handleConfirmarConclusao = (e: React.FormEvent) => {
@@ -445,8 +557,13 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     concluirTarefa(concluirModalTarefa.id, {
       ehPagamento,
       arquivoNome: ehPagamento ? (concluirArquivoNome || 'Guia_Pagamento.pdf') : undefined,
+      arquivoConteudo: ehPagamento ? concluirArquivoConteudo : undefined,
+      arquivoTamanho: ehPagamento ? concluirArquivoTamanho : undefined,
       dataVencimento: ehPagamento ? concluirDataVencimento : undefined,
-      valor: valorNum
+      valor: valorNum,
+      mensagemPersonalizada: ehPagamento && concluirEditandoMensagem && concluirMensagemCustom.trim()
+        ? concluirMensagemCustom.trim()
+        : undefined
     });
 
     const envioWhats = ehPagamento && cliente?.receber_guias_whatsapp !== false;
@@ -455,6 +572,11 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
       : `✅ Tarefa concluída com sucesso! (Modo Clean: movida para concluídas)`;
 
     setConcluirModalTarefa(null);
+    setConcluirArquivoNome('');
+    setConcluirArquivoConteudo('');
+    setConcluirArquivoTamanho('');
+    setConcluirEditandoMensagem(false);
+    if (guiaFileInputRef.current) guiaFileInputRef.current.value = '';
     setFeedbackToast(msgFeedback);
     setTimeout(() => setFeedbackToast(null), 5000);
   };
@@ -782,7 +904,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
         /* VISÃO LISTA / TABELA */
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-subtle overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full min-w-[720px] text-left text-xs">
               <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="px-5 py-3.5">Obrigação & Cliente</th>
@@ -1229,152 +1351,273 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
       )}
 
       {/* 5. MODAL INTELIGENTE DE CONCLUSÃO COM GUIA DE PAGAMENTO */}
-      {concluirModalTarefa && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
-              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-                <CheckCircle2 className="w-5 h-5 text-brand-blue" />
-                <span>Concluir Tarefa & Emissão de Guia</span>
-              </div>
-              <button
-                onClick={() => setConcluirModalTarefa(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {concluirModalTarefa && (() => {
+        const modeloCorrespondente = obterModeloMensagemParaTarefa(concluirModalTarefa);
 
-            <form onSubmit={handleConfirmarConclusao} className="p-6 space-y-4 text-xs">
-              {/* Identificação da Tarefa */}
-              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                <p className="font-bold text-slate-900 text-sm">{concluirModalTarefa.titulo}</p>
-                <div className="flex items-center gap-3 text-slate-500 mt-1">
-                  <span>🏢 {concluirModalTarefa.cliente_nome}</span>
-                  <span>🗓️ Comp: {concluirModalTarefa.competencia}</span>
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[92vh] overflow-y-auto">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/50 sticky top-0 bg-white/95 backdrop-blur-xs z-10">
+                <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                  <CheckCircle2 className="w-5 h-5 text-brand-blue" />
+                  <span>Concluir Tarefa & Emissão de Guia</span>
                 </div>
-              </div>
-
-              {/* Pergunta Obrigatória: É algo para pagamento? */}
-              <div>
-                <label className="block font-bold text-slate-800 text-xs mb-2">
-                  Esta tarefa envolve Guia para Pagamento (Tributo, DAS, DARF, Boleto, GPS)?
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setConcluirEhPagamento('sim')}
-                    className={`p-3 rounded-2xl border text-center transition-all ${
-                      concluirEhPagamento === 'sim'
-                        ? 'bg-blue-50 border-brand-blue text-brand-blue font-bold shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="block text-sm">💰 SIM</span>
-                    <span className="text-[10px] font-normal text-slate-500">Gera Guia para o Cliente</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setConcluirEhPagamento('nao')}
-                    className={`p-3 rounded-2xl border text-center transition-all ${
-                      concluirEhPagamento === 'nao'
-                        ? 'bg-slate-100 border-slate-400 text-slate-900 font-bold shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="block text-sm">📋 NÃO</span>
-                    <span className="text-[10px] font-normal text-slate-500">Apenas obrigação interna</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Se for SIM: Campos da Guia Obrigatória */}
-              {concluirEhPagamento === 'sim' && (
-                <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200 space-y-3 animate-in fade-in">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">
-                        Data de Vencimento da Guia *
-                      </label>
-                      <input
-                        type="date"
-                        required
-                        value={concluirDataVencimento}
-                        onChange={e => setConcluirDataVencimento(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">
-                        Valor a Pagar (R$)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ex: 1.450,80"
-                        value={concluirValor}
-                        onChange={e => setConcluirValor(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Anexo da Guia */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Documento da Guia para Pagamento (PDF) *
-                    </label>
-                    <div className="border-2 border-dashed border-emerald-300 bg-white p-3.5 rounded-2xl text-center">
-                      <Upload className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
-                      <p className="font-semibold text-slate-800 text-xs">
-                        {concluirArquivoNome || 'Selecionar Guia em PDF'}
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        O arquivo será anexado e hospedado no Portal do Cliente com segurança.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Detalhamento das Automações que serão disparadas */}
-                  <div className="pt-2 border-t border-emerald-200/80 space-y-1.5 text-[11px] text-emerald-950">
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>
-                        <strong>E-mail Automático:</strong> Enviado com a guia anexa e texto padrão de cobrança.
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="w-3.5 h-3.5 text-brand-green shrink-0" />
-                      <span>
-                        <strong>WhatsApp Automático:</strong> Notificação instantânea com vencimento e link direto da guia para o cliente pagar.
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Botões de Ação */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setConcluirModalTarefa(null)}
-                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold shadow-sm transition-all"
-                >
-                  Confirmar Conclusão & Disparar
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handleConfirmarConclusao} className="p-4 sm:p-6 space-y-4 text-xs">
+                {/* Identificação da Tarefa */}
+                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                  <p className="font-bold text-slate-900 text-sm">{concluirModalTarefa.titulo}</p>
+                  <div className="flex items-center gap-3 text-slate-500 mt-1 flex-wrap">
+                    <span>🏢 {concluirModalTarefa.cliente_nome}</span>
+                    <span>🗓️ Comp: {concluirModalTarefa.competencia}</span>
+                  </div>
+                </div>
+
+                {/* Pergunta Obrigatória: É algo para pagamento? */}
+                <div>
+                  <label className="block font-bold text-slate-800 text-xs mb-2">
+                    Esta tarefa envolve Guia para Pagamento (Tributo, DAS, DARF, Boleto, GPS)?
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setConcluirEhPagamento('sim')}
+                      className={`p-3 rounded-2xl border text-center transition-all ${
+                        concluirEhPagamento === 'sim'
+                          ? 'bg-blue-50 border-brand-blue text-brand-blue font-bold shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="block text-sm">💰 SIM</span>
+                      <span className="text-[10px] font-normal text-slate-500">Gera Guia para o Cliente</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setConcluirEhPagamento('nao')}
+                      className={`p-3 rounded-2xl border text-center transition-all ${
+                        concluirEhPagamento === 'nao'
+                          ? 'bg-slate-100 border-slate-400 text-slate-900 font-bold shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="block text-sm">📋 NÃO</span>
+                      <span className="text-[10px] font-normal text-slate-500">Apenas obrigação interna</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Se for SIM: Campos da Guia Obrigatória */}
+                {concluirEhPagamento === 'sim' && (
+                  <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200 space-y-3.5 animate-in fade-in">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Data de Vencimento da Guia *
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={concluirDataVencimento}
+                          onChange={e => setConcluirDataVencimento(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Valor a Pagar (R$)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: 1.450,80"
+                          value={concluirValor}
+                          onChange={e => setConcluirValor(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Anexo Real da Guia (Input File Interativo) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-semibold text-slate-700">
+                          Documento da Guia para Pagamento (PDF) *
+                        </label>
+                        <span className="text-[10px] text-slate-400">PDF, Imagens ou Documentos</span>
+                      </div>
+
+                      {/* Input de arquivo real oculto */}
+                      <input
+                        type="file"
+                        ref={guiaFileInputRef}
+                        accept="application/pdf,image/*,.doc,.docx,.xml"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file) handleArquivoGuiaChange(file);
+                        }}
+                        className="hidden"
+                      />
+
+                      {/* Box interativo de upload */}
+                      {concluirArquivoConteudo ? (
+                        <div className="p-3 bg-white rounded-2xl border-2 border-emerald-400 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 text-xs truncate">{concluirArquivoNome}</p>
+                              <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                                <span>Tamanho: {concluirArquivoTamanho}</span>
+                                <span className="text-emerald-600 font-bold flex items-center gap-0.5">
+                                  <Check className="w-3 h-3" /> Arquivo Carregado
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => guiaFileInputRef.current?.click()}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold"
+                            >
+                              Trocar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConcluirArquivoNome('');
+                                setConcluirArquivoConteudo('');
+                                setConcluirArquivoTamanho('');
+                                if (guiaFileInputRef.current) guiaFileInputRef.current.value = '';
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                              title="Remover anexo"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => guiaFileInputRef.current?.click()}
+                          onDragOver={e => { e.preventDefault(); setIsDraggingGuia(true); }}
+                          onDragLeave={() => setIsDraggingGuia(false)}
+                          onDrop={e => {
+                            e.preventDefault();
+                            setIsDraggingGuia(false);
+                            const file = e.dataTransfer.files?.[0];
+                            if (file) handleArquivoGuiaChange(file);
+                          }}
+                          className={`border-2 border-dashed p-4 rounded-2xl text-center cursor-pointer transition-all ${
+                            isDraggingGuia
+                              ? 'border-brand-blue bg-blue-50/60'
+                              : 'border-emerald-300 bg-white hover:bg-emerald-50/40 hover:border-emerald-400'
+                          }`}
+                        >
+                          <Upload className="w-6 h-6 text-emerald-600 mx-auto mb-1.5" />
+                          <p className="font-bold text-slate-900 text-xs">
+                            Clique aqui para selecionar a Guia em PDF do seu computador
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            {concluirArquivoNome ? `Arquivo sugerido: ${concluirArquivoNome}` : 'Ou arraste o arquivo PDF diretamente aqui'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              guiaFileInputRef.current?.click();
+                            }}
+                            className="mt-2.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-xl shadow-xs transition-all inline-flex items-center gap-1"
+                          >
+                            <Upload className="w-3 h-3" />
+                            <span>Abrir Meus Arquivos</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Preview da Mensagem do WhatsApp Personalizada para Esta Tarefa */}
+                    <div className="pt-2 border-t border-emerald-200/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                          <MessageSquare className="w-3.5 h-3.5 text-brand-green" />
+                          <span>Mensagem WhatsApp da Tarefa ({modeloCorrespondente.nome}):</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setConcluirEditandoMensagem(!concluirEditandoMensagem)}
+                          className="text-[11px] font-semibold text-brand-blue hover:underline"
+                        >
+                          {concluirEditandoMensagem ? 'Visualizar Prévia' : 'Personalizar Texto'}
+                        </button>
+                      </div>
+
+                      {concluirEditandoMensagem ? (
+                        <textarea
+                          rows={4}
+                          value={concluirMensagemCustom}
+                          onChange={e => setConcluirMensagemCustom(e.target.value)}
+                          className="w-full p-2.5 rounded-xl border border-slate-300 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-blue bg-white"
+                          placeholder="Digite ou ajuste o texto da mensagem para este envio..."
+                        />
+                      ) : (
+                        <div className="p-3 bg-white/95 rounded-xl border border-emerald-200 text-[11px] text-slate-700 whitespace-pre-line leading-relaxed max-h-36 overflow-y-auto font-sans shadow-2xs">
+                          {concluirMensagemPreview}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Detalhamento das Automações que serão disparadas */}
+                    <div className="pt-2 border-t border-emerald-200/80 space-y-1.5 text-[11px] text-emerald-950">
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>
+                          <strong>E-mail Automático:</strong> Enviado com a guia anexa e texto padrão de cobrança.
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="w-3.5 h-3.5 text-brand-green shrink-0" />
+                        <span>
+                          <strong>WhatsApp Automático:</strong> Notificação instantânea com vencimento e link direto no Portal para o cliente abrir e baixar.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Botões de Ação */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConcluirModalTarefa(null)}
+                    className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold shadow-sm transition-all"
+                  >
+                    Confirmar Conclusão & Disparar
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 6. MODAL DE COMENTÁRIOS E OBSERVAÇÕES (BALÃO VERDE) */}
       {comentarioModalTarefa && (
@@ -1818,6 +2061,104 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                   )}
                 </div>
 
+                {/* Documentos & Anexos Gerais da Tarefa */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                      <Paperclip className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Documentos & Anexos da Tarefa ({((tarefaLive.arquivos_anexos?.length || 0) + (tarefaLive.guia_pagamento ? 1 : 0))})</span>
+                    </h4>
+
+                    {/* Input real para anexar arquivo diretamente à tarefa */}
+                    <input
+                      type="file"
+                      ref={tarefaGeralFileInputRef}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) handleArquivoGeralTarefaChange(tarefaLive.id, file);
+                      }}
+                      className="hidden"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => tarefaGeralFileInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-2xs transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Anexar Arquivo à Tarefa</span>
+                    </button>
+                  </div>
+
+                  {/* Se houver Guia anexada nesta tarefa */}
+                  {tarefaLive.guia_pagamento && (
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                          <DollarSign className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-xs">Guia Oficial de Pagamento</span>
+                            <span className="text-[9px] font-bold bg-emerald-200 text-emerald-900 px-1.5 py-0.2 rounded-full">
+                              Venc: {tarefaLive.guia_pagamento.data_vencimento}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {tarefaLive.guia_pagamento.arquivo_nome}
+                            {tarefaLive.guia_pagamento.valor ? ` • R$ ${tarefaLive.guia_pagamento.valor.toFixed(2)}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <a
+                        href={tarefaLive.guia_pagamento.arquivo_conteudo || tarefaLive.guia_pagamento.arquivo_url || `/portal/guia?id=${tarefaLive.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white text-[11px] font-bold flex items-center gap-1 shrink-0 shadow-2xs transition-all"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Abrir Guia</span>
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Arquivos avulsos anexados */}
+                  {(!tarefaLive.arquivos_anexos || tarefaLive.arquivos_anexos.length === 0) && !tarefaLive.guia_pagamento ? (
+                    <p className="text-[11px] text-slate-400 italic">Nenhum documento geral fixado nesta obrigação ainda.</p>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {(tarefaLive.arquivos_anexos || []).map(arq => (
+                        <div
+                          key={arq.id}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 shadow-2xs"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <a
+                            href={arq.conteudo || arq.url || '#'}
+                            download={arq.nome}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium hover:text-indigo-600 hover:underline truncate max-w-[180px]"
+                            title="Clique para baixar ou abrir"
+                          >
+                            {arq.nome}
+                          </a>
+                          {arq.tamanho && <span className="text-[10px] text-slate-400">({arq.tamanho})</span>}
+                          <button
+                            type="button"
+                            onClick={() => removerArquivoTarefa(tarefaLive.id, arq.id)}
+                            className="text-slate-400 hover:text-red-600 p-0.5 ml-1"
+                            title="Remover anexo"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Lista de Etapas Existentes */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -1927,8 +2268,17 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                                   key={arq.id}
                                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[11px] text-slate-700 font-medium"
                                 >
-                                  <FileText className="w-3 h-3 text-indigo-600" />
-                                  <span className="truncate max-w-[140px]">{arq.nome}</span>
+                                  <FileText className="w-3 h-3 text-indigo-600 shrink-0" />
+                                  <a
+                                    href={arq.conteudo || arq.url || '#'}
+                                    download={arq.nome}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="truncate max-w-[140px] hover:text-indigo-600 hover:underline cursor-pointer"
+                                    title="Clique para baixar ou abrir"
+                                  >
+                                    {arq.nome}
+                                  </a>
                                   {arq.tamanho && <span className="text-[9px] text-slate-400">({arq.tamanho})</span>}
                                   <button
                                     type="button"
@@ -2351,7 +2701,44 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
             <form onSubmit={handleSalvarAnexoEtapa} className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Nome do Arquivo / Documento *</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Selecionar Arquivo do Computador *
+                </label>
+                <input
+                  type="file"
+                  ref={etapaFileInputRef}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleArquivoEtapaChange(file);
+                  }}
+                  className="hidden"
+                />
+
+                <div
+                  onClick={() => etapaFileInputRef.current?.click()}
+                  className="border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-white hover:bg-indigo-50/50 p-4 rounded-2xl text-center cursor-pointer transition-all mb-3"
+                >
+                  <Upload className="w-5 h-5 text-indigo-600 mx-auto mb-1.5" />
+                  <p className="font-bold text-slate-900 text-xs">
+                    {novoArquivoNome ? `Arquivo: ${novoArquivoNome}` : 'Clique aqui para selecionar o arquivo do seu computador'}
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {novoEtapaArquivoTamanho ? `Tamanho: ${novoEtapaArquivoTamanho}` : 'Suporta PDF, XLSX, DOCX, Imagens e outros formatos'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      etapaFileInputRef.current?.click();
+                    }}
+                    className="mt-2 px-3 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-[10px] font-bold rounded-xl transition-all inline-flex items-center gap-1"
+                  >
+                    <Upload className="w-3 h-3" />
+                    <span>Procurar nos meus arquivos</span>
+                  </button>
+                </div>
+
+                <label className="block font-semibold text-slate-700 mb-1">Nome do Arquivo / Identificação:</label>
                 <input
                   type="text"
                   required

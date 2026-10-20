@@ -36,7 +36,9 @@ import {
   Landmark,
   Sliders,
   History,
-  RefreshCw
+  RefreshCw,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 export function FinanceiroView() {
@@ -53,6 +55,10 @@ export function FinanceiroView() {
     deleteContaPagar,
     redefinirFinanceiro,
     darBaixaHonorario,
+    atualizarHonorario,
+    adicionarHonorario,
+    excluirHonorario,
+    sincronizarHonorariosComClientes,
     gerarHonorariosCompetencia,
     dispararCobrancaHonorarioWhatsApp,
     addContaPagar,
@@ -87,6 +93,29 @@ export function FinanceiroView() {
   const [baixaValor, setBaixaValor] = useState<number>(0);
   const [baixaObservacoes, setBaixaObservacoes] = useState<string>('');
   const [baixaNotificarWhats, setBaixaNotificarWhats] = useState<boolean>(true);
+
+  // Modais de Edição e Criação de Honorários
+  const [modalEditarHonorario, setModalEditarHonorario] = useState<HonorarioItem | null>(null);
+  const [modalNovoHonorario, setModalNovoHonorario] = useState<boolean>(false);
+
+  // Form de Edição de Honorário
+  const [editValor, setEditValor] = useState<number>(0);
+  const [editVencimento, setEditVencimento] = useState<string>('');
+  const [editCompetencia, setEditCompetencia] = useState<string>('');
+  const [editParcelaInfo, setEditParcelaInfo] = useState<string>('');
+  const [editStatus, setEditStatus] = useState<'Pendente' | 'Pago' | 'Vencido' | 'Cancelado'>('Pendente');
+  const [editObservacoes, setEditObservacoes] = useState<string>('');
+  const [editAtualizarClienteContratual, setEditAtualizarClienteContratual] = useState<boolean>(true);
+
+  // Form de Novo Honorário
+  const [novoHonClienteId, setNovoHonClienteId] = useState<string>('');
+  const [novoHonCompetencia, setNovoHonCompetencia] = useState<string>('10/2026');
+  const [novoHonValor, setNovoHonValor] = useState<number>(0);
+  const [novoHonVencimento, setNovoHonVencimento] = useState<string>('');
+  const [novoHonParcelaInfo, setNovoHonParcelaInfo] = useState<string>('Mensalidade');
+  const [novoHonStatus, setNovoHonStatus] = useState<'Pendente' | 'Pago'>('Pendente');
+  const [novoHonObservacoes, setNovoHonObservacoes] = useState<string>('');
+  const [novoHonAtualizarCliente, setNovoHonAtualizarCliente] = useState<boolean>(true);
 
   // Modal Extrato Consolidado por Cliente
   const [clienteExtratoModal, setClienteExtratoModal] = useState<string | null>(null);
@@ -232,6 +261,107 @@ export function FinanceiroView() {
   const handleCobrarWhatsApp = (honorarioId: string) => {
     dispararCobrancaHonorarioWhatsApp(honorarioId);
     setToastMsg('📲 Lembrete de honorário enviado via WhatsApp com chave PIX PicPay!');
+    setTimeout(() => setToastMsg(null), 4000);
+  };
+
+  // 10.1 Ações de Gestão de Honorários em Tempo Real
+  const handleAbrirEdicaoHonorario = (hon: HonorarioItem) => {
+    setModalEditarHonorario(hon);
+    setEditValor(hon.valor);
+    setEditVencimento(hon.data_vencimento);
+    setEditCompetencia(hon.competencia);
+    setEditParcelaInfo(hon.parcela_info || '');
+    setEditStatus(hon.status);
+    setEditObservacoes(hon.observacoes || '');
+    setEditAtualizarClienteContratual(true);
+  };
+
+  const handleSalvarEdicaoHonorario = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalEditarHonorario) return;
+
+    atualizarHonorario(
+      modalEditarHonorario.id,
+      {
+        valor: editValor,
+        data_vencimento: editVencimento,
+        competencia: editCompetencia,
+        parcela_info: editParcelaInfo,
+        status: editStatus,
+        observacoes: editObservacoes
+      },
+      editAtualizarClienteContratual
+    );
+
+    setModalEditarHonorario(null);
+    setToastMsg('✅ Honorário atualizado e salvo em tempo real!');
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  const handleAbrirNovoHonorario = () => {
+    const primeiroCliente = clientes.find(c => c.status === 'Ativo') || clientes[0];
+    const clienteId = primeiroCliente?.id || '';
+    setNovoHonClienteId(clienteId);
+    setNovoHonCompetencia(competenciaSelecionada);
+    setNovoHonValor(primeiroCliente?.honorario_mensal || 0);
+    const dia = String(primeiroCliente?.dia_vencimento || 15).padStart(2, '0');
+    const [mes, ano] = competenciaSelecionada.split('/');
+    setNovoHonVencimento(`${ano || '2026'}-${mes || '10'}-${dia}`);
+    setNovoHonParcelaInfo(`Mensalidade ${competenciaSelecionada}`);
+    setNovoHonStatus('Pendente');
+    setNovoHonObservacoes('');
+    setNovoHonAtualizarCliente(false);
+    setModalNovoHonorario(true);
+  };
+
+  const handleClienteChangeNovoHon = (clienteId: string) => {
+    setNovoHonClienteId(clienteId);
+    const cli = clientes.find(c => c.id === clienteId);
+    if (cli) {
+      setNovoHonValor(cli.honorario_mensal || 0);
+      const dia = String(cli.dia_vencimento || 15).padStart(2, '0');
+      const [mes, ano] = novoHonCompetencia.split('/');
+      setNovoHonVencimento(`${ano || '2026'}-${mes || '10'}-${dia}`);
+    }
+  };
+
+  const handleSalvarNovoHonorario = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cli = clientes.find(c => c.id === novoHonClienteId);
+    if (!cli) return;
+
+    adicionarHonorario(
+      {
+        cliente_id: cli.id,
+        cliente_nome: cli.nome,
+        contato_nome: cli.responsavel || cli.nome.split(' ')[0],
+        contato_telefone: cli.whatsapp || cli.telefone,
+        competencia: novoHonCompetencia,
+        valor: novoHonValor,
+        data_vencimento: novoHonVencimento,
+        status: novoHonStatus,
+        parcela_info: novoHonParcelaInfo,
+        observacoes: novoHonObservacoes
+      },
+      novoHonAtualizarCliente
+    );
+
+    setModalNovoHonorario(false);
+    setToastMsg(`✅ Honorário de R$ ${novoHonValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} lançado com sucesso!`);
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  const handleExcluirHonorario = (id: string, clienteNome: string) => {
+    if (window.confirm(`Tem certeza que deseja excluir o lançamento de honorário de "${clienteNome}"?`)) {
+      excluirHonorario(id);
+      setToastMsg('🗑️ Honorário excluído com sucesso!');
+      setTimeout(() => setToastMsg(null), 3500);
+    }
+  };
+
+  const handleSincronizarCarteira = () => {
+    const qtd = sincronizarHonorariosComClientes(competenciaSelecionada);
+    setToastMsg(`🔄 Sincronização concluída: ${qtd} honorário(s) sincronizados com a carteira de clientes!`);
     setTimeout(() => setToastMsg(null), 4000);
   };
 
@@ -547,14 +677,31 @@ export function FinanceiroView() {
               </select>
             </div>
 
-            {/* Ação de Gerar Próxima Competência */}
-            <div className="flex items-center gap-2">
+            {/* Ações de Gestão de Honorários */}
+            <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={handleGerarProximaCompetencia}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white text-xs font-bold transition-all shadow-sm"
+                onClick={handleAbrirNovoHonorario}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-brand-green hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-sm"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Gerar Próxima Competência</span>
+                <span>+ Lançar Honorário</span>
+              </button>
+
+              <button
+                onClick={handleSincronizarCarteira}
+                title="Sincroniza os honorários desta competência com o valor cadastrado na carteira de clientes"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all border border-slate-200"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-brand-blue" />
+                <span>Sincronizar da Carteira</span>
+              </button>
+
+              <button
+                onClick={handleGerarProximaCompetencia}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white text-xs font-bold transition-all shadow-sm"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Gerar Próximo Mês</span>
               </button>
             </div>
           </div>
@@ -887,29 +1034,47 @@ export function FinanceiroView() {
                           )}
                         </td>
 
-                        <td className="px-5 py-3.5 text-right space-x-1.5">
+                        <td className="px-5 py-3.5 text-right space-x-1.5 whitespace-nowrap">
+                          {/* Botão de Edição Rápida */}
+                          <button
+                            onClick={() => handleAbrirEdicaoHonorario(hon)}
+                            title="Editar Honorário (Valor, Vencimento, Status)"
+                            className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-brand-blue border border-blue-200 transition-all inline-flex items-center shadow-xs"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+
                           {hon.status !== 'Pago' ? (
                             <>
                               <button
                                 onClick={() => handleAbrirBaixa(hon)}
-                                className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-brand-green border border-emerald-200 font-bold transition-all shadow-subtle"
+                                className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-brand-green border border-emerald-200 font-bold transition-all shadow-subtle inline-flex items-center"
                               >
                                 Dar Baixa
                               </button>
                               <button
                                 onClick={() => handleCobrarWhatsApp(hon.id)}
                                 title="Cobrança no WhatsApp"
-                                className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all"
+                                className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all inline-flex items-center"
                               >
                                 <MessageSquare className="w-3.5 h-3.5 text-brand-green" />
                               </button>
                             </>
                           ) : (
-                            <span className="text-emerald-600 font-bold text-[11px] flex items-center justify-end gap-1">
+                            <span className="text-emerald-600 font-bold text-[11px] inline-flex items-center gap-1">
                               <CheckCheck className="w-3.5 h-3.5" />
                               Quitado
                             </span>
                           )}
+
+                          {/* Botão de Excluir Lançamento */}
+                          <button
+                            onClick={() => handleExcluirHonorario(hon.id, hon.cliente_nome)}
+                            title="Excluir Lançamento"
+                            className="p-1.5 rounded-xl hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all inline-flex items-center"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -1651,6 +1816,290 @@ export function FinanceiroView() {
                   className="px-5 py-2 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold transition-all shadow-md"
                 >
                   Confirmar Baixa & Liquidação
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL INTELIGENTE DE EDIÇÃO DE HONORÁRIO                                  */}
+      {/* ========================================================================= */}
+      {modalEditarHonorario && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/60">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-4 h-4 text-brand-blue" />
+                <h3 className="font-bold text-slate-900 text-sm">Editar Honorário</h3>
+              </div>
+              <button
+                onClick={() => setModalEditarHonorario(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarEdicaoHonorario} className="p-6 space-y-4 text-xs">
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="font-extrabold text-slate-900 text-sm">{modalEditarHonorario.cliente_nome}</p>
+                {modalEditarHonorario.contato_nome && (
+                  <p className="text-[11px] text-slate-500 mt-0.5">Contato: {modalEditarHonorario.contato_nome}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Competência *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="MM/AAAA"
+                    value={editCompetencia}
+                    onChange={e => setEditCompetencia(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold focus:ring-2 focus:ring-brand-blue/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Valor do Honorário (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={editValor}
+                    onChange={e => setEditValor(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-black text-brand-blue text-sm focus:ring-2 focus:ring-brand-blue/20"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Data de Vencimento *</label>
+                  <input
+                    type="date"
+                    required
+                    value={editVencimento}
+                    onChange={e => setEditVencimento(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-blue/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Status da Cobrança *</label>
+                  <select
+                    value={editStatus}
+                    onChange={e => setEditStatus(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold focus:ring-2 focus:ring-brand-blue/20"
+                  >
+                    <option value="Pendente">Pendente</option>
+                    <option value="Pago">Pago / Quitado</option>
+                    <option value="Vencido">Vencido</option>
+                    <option value="Cancelado">Cancelado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Descrição / Parcela</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Mensalidade 10/2026, Parcela 4/12, etc."
+                  value={editParcelaInfo}
+                  onChange={e => setEditParcelaInfo(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Observações Internas</label>
+                <textarea
+                  rows={2}
+                  placeholder="Anotações sobre negociação, forma de pagamento ou desconto..."
+                  value={editObservacoes}
+                  onChange={e => setEditObservacoes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-blue/20"
+                />
+              </div>
+
+              {/* Sincronização automática com a carteira */}
+              <div className="flex items-center justify-between p-3 bg-blue-50/70 rounded-2xl border border-blue-200">
+                <div className="pr-2">
+                  <p className="font-bold text-blue-900 text-[11px]">Sincronizar Carteira de Clientes</p>
+                  <p className="text-[10px] text-blue-700">
+                    Atualiza o honorário mensal contratual do cliente para R$ {editValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} no cadastro e relatórios BI.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={editAtualizarClienteContratual}
+                  onChange={e => setEditAtualizarClienteContratual(e.target.checked)}
+                  className="w-4 h-4 text-brand-blue rounded border-slate-300 focus:ring-brand-blue"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setModalEditarHonorario(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-bold transition-all shadow-md"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL NOVO HONORÁRIO                                                      */}
+      {/* ========================================================================= */}
+      {modalNovoHonorario && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-emerald-50/60">
+              <div className="flex items-center gap-2">
+                <Plus className="w-4 h-4 text-brand-green" />
+                <h3 className="font-bold text-slate-900 text-sm">Lançar Novo Honorário</h3>
+              </div>
+              <button
+                onClick={() => setModalNovoHonorario(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarNovoHonorario} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Cliente / Empresa *</label>
+                <select
+                  required
+                  value={novoHonClienteId}
+                  onChange={e => handleClienteChangeNovoHon(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold focus:ring-2 focus:ring-brand-green/20"
+                >
+                  {clientes.map(cli => (
+                    <option key={cli.id} value={cli.id}>
+                      {cli.nome} {cli.status === 'Inativo' ? '(Inativo)' : ''} — Honorário: R$ {(cli.honorario_mensal || 0).toLocaleString('pt-BR')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Competência *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="MM/AAAA (ex: 10/2026)"
+                    value={novoHonCompetencia}
+                    onChange={e => setNovoHonCompetencia(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold focus:ring-2 focus:ring-brand-green/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Valor do Lançamento (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={novoHonValor}
+                    onChange={e => setNovoHonValor(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-black text-brand-green text-sm focus:ring-2 focus:ring-brand-green/20"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Data de Vencimento *</label>
+                  <input
+                    type="date"
+                    required
+                    value={novoHonVencimento}
+                    onChange={e => setNovoHonVencimento(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-green/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Status Inicial *</label>
+                  <select
+                    value={novoHonStatus}
+                    onChange={e => setNovoHonStatus(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold focus:ring-2 focus:ring-brand-green/20"
+                  >
+                    <option value="Pendente">Pendente (A Receber)</option>
+                    <option value="Pago">Pago / Quitado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Descrição / Identificação da Parcela</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Mensalidade 10/2026, Honorário Extra, Alteração..."
+                  value={novoHonParcelaInfo}
+                  onChange={e => setNovoHonParcelaInfo(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-green/20"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Observações</label>
+                <textarea
+                  rows={2}
+                  placeholder="Informações adicionais do faturamento..."
+                  value={novoHonObservacoes}
+                  onChange={e => setNovoHonObservacoes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-green/20"
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-emerald-50/70 rounded-2xl border border-emerald-200">
+                <div className="pr-2">
+                  <p className="font-bold text-emerald-900 text-[11px]">Definir como novo Honorário Contratual do Cliente</p>
+                  <p className="text-[10px] text-emerald-700">
+                    Se marcado, atualiza a mensalidade fixa do cliente no cadastro para R$ {novoHonValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={novoHonAtualizarCliente}
+                  onChange={e => setNovoHonAtualizarCliente(e.target.checked)}
+                  className="w-4 h-4 text-brand-green rounded border-slate-300 focus:ring-brand-green"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setModalNovoHonorario(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold transition-all shadow-md"
+                >
+                  Confirmar Lançamento
                 </button>
               </div>
             </form>

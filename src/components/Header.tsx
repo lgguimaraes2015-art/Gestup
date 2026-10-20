@@ -7,7 +7,7 @@ import {
   Plus,
   Send,
   AlertTriangle,
-  RotateCcw,
+  CheckCheck,
   PanelLeftClose,
   PanelLeftOpen,
   Menu
@@ -23,7 +23,6 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
     activeTab,
     tarefas,
     dispararResumoMatinalEquipe,
-    redefinirDadosPadrao,
     sidebarCollapsed,
     toggleSidebar,
     toggleMobileMenu
@@ -40,9 +39,8 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
   };
 
   const handleSincronizar = () => {
-    redefinirDadosPadrao();
-    setToastMessage('🔄 Dados do GestUp v2.0 sincronizados e recarregados com sucesso!');
-    setTimeout(() => setToastMessage(null), 4000);
+    setToastMessage('✅ Dados salvos e sincronizados localmente em tempo real!');
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   const getPageTitle = () => {
@@ -147,14 +145,19 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
             <span className="sm:hidden">Resumo Equipe</span>
           </button>
 
-          {/* Botão de Sincronização / Reset de Cache v2.0 */}
+          {/* Indicador & Botão de Salvamento em Tempo Real */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Salvo em tempo real</span>
+          </div>
+
           <button
             onClick={handleSincronizar}
-            title="Recarrega todos os dados padrão enriquecidos do GestUp v2.0"
+            title="Todos os honorários, cadastros e tarefas são gravados em tempo real no navegador"
             className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] sm:text-xs font-semibold transition-all shadow-subtle"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-            <span className="hidden md:inline">Sincronizar v2.0</span>
+            <CheckCheck className="w-3.5 h-3.5 text-brand-green shrink-0" />
+            <span className="hidden md:inline">Sincronizado</span>
           </button>
 
           {/* Botão Principal de Adição Contextual */}

@@ -186,6 +186,10 @@ interface AppContextType {
       notificarWhatsApp?: boolean;
     }
   ) => void;
+  atualizarHonorario: (id: string, updates: Partial<HonorarioItem>, atualizarClienteContratual?: boolean) => void;
+  adicionarHonorario: (hon: Omit<HonorarioItem, 'id' | 'created_at'>, atualizarClienteContratual?: boolean) => void;
+  excluirHonorario: (id: string) => void;
+  sincronizarHonorariosComClientes: (competenciaAlvo?: string) => number;
   gerarHonorariosCompetencia: (competenciaAlvo: string) => void;
   dispararCobrancaHonorarioWhatsApp: (honorarioId: string) => void;
 
@@ -438,23 +442,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const savedTarefas = localStorage.getItem('gestup_v2_tarefas');
       if (savedTarefas) {
-        const parsed = JSON.parse(savedTarefas);
-        if (parsed.length >= 50) setTarefas(parsed.map(enrichTarefa));
+        try {
+          const parsed = JSON.parse(savedTarefas);
+          if (Array.isArray(parsed) && parsed.length > 0) setTarefas(parsed.map(enrichTarefa));
+        } catch {}
       }
       const savedClientes = localStorage.getItem('gestup_v2_clientes');
       if (savedClientes) {
-        const parsed = JSON.parse(savedClientes);
-        if (parsed.length >= 10) setClientes(parsed.map(enrichCliente));
+        try {
+          const parsed = JSON.parse(savedClientes);
+          if (Array.isArray(parsed) && parsed.length > 0) setClientes(parsed.map(enrichCliente));
+        } catch {}
       }
       const savedDeclaracoes = localStorage.getItem('gestup_v2_declaracoes');
-      if (savedDeclaracoes) setDeclaracoes((JSON.parse(savedDeclaracoes) as Declaracao[]).map(enrichDeclaracao));
+      if (savedDeclaracoes) {
+        try {
+          setDeclaracoes((JSON.parse(savedDeclaracoes) as Declaracao[]).map(enrichDeclaracao));
+        } catch {}
+      }
       // 1. Contas a Pagar: Apenas a partir de 10/2026
       const savedPagar = localStorage.getItem('gestup_v2_contas_pagar');
       if (savedPagar) {
-        const parsedPagar = JSON.parse(savedPagar) as ContaPagar[];
-        const filtradosPagar = parsedPagar.filter(cp => cp.data_vencimento && cp.data_vencimento >= '2026-10-01');
-        setContasPagar(filtradosPagar);
-        try { localStorage.setItem('gestup_v2_contas_pagar', JSON.stringify(filtradosPagar)); } catch {}
+        try {
+          const parsedPagar = JSON.parse(savedPagar) as ContaPagar[];
+          const filtradosPagar = parsedPagar.filter(cp => cp.data_vencimento && cp.data_vencimento >= '2026-10-01');
+          setContasPagar(filtradosPagar);
+        } catch {}
       } else {
         setContasPagar([]);
       }
@@ -462,10 +475,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // 2. Contas a Receber: Apenas a partir de 10/2026
       const savedReceber = localStorage.getItem('gestup_v2_contas_receber');
       if (savedReceber) {
-        const parsedReceber = JSON.parse(savedReceber) as ContaReceber[];
-        const filtradosReceber = parsedReceber.filter(cr => cr.data_vencimento && cr.data_vencimento >= '2026-10-01');
-        setContasReceber(filtradosReceber);
-        try { localStorage.setItem('gestup_v2_contas_receber', JSON.stringify(filtradosReceber)); } catch {}
+        try {
+          const parsedReceber = JSON.parse(savedReceber) as ContaReceber[];
+          const filtradosReceber = parsedReceber.filter(cr => cr.data_vencimento && cr.data_vencimento >= '2026-10-01');
+          setContasReceber(filtradosReceber);
+        } catch {}
       } else {
         setContasReceber([]);
       }
@@ -473,16 +487,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // 3. Honorários: Mantém estritamente competência 10/2026 para frente
       const savedHonorarios = localStorage.getItem('gestup_v2_honorarios');
       if (savedHonorarios) {
-        const parsedHons = JSON.parse(savedHonorarios) as HonorarioItem[];
-        const filtradosHons = parsedHons.filter(h => {
-          if (!h.competencia) return false;
-          const [m, y] = h.competencia.split('/').map(Number);
-          if (isNaN(m) || isNaN(y)) return false;
-          return (y > 2026) || (y === 2026 && m >= 10);
-        });
-        const honsFinais = filtradosHons.length > 0 ? filtradosHons : initialHonorarios;
-        setHonorarios(honsFinais);
-        try { localStorage.setItem('gestup_v2_honorarios', JSON.stringify(honsFinais)); } catch {}
+        try {
+          const parsedHons = JSON.parse(savedHonorarios) as HonorarioItem[];
+          if (Array.isArray(parsedHons)) {
+            const filtradosHons = parsedHons.filter(h => {
+              if (!h.competencia) return true;
+              const [m, y] = h.competencia.split('/').map(Number);
+              if (isNaN(m) || isNaN(y)) return true;
+              return (y > 2026) || (y === 2026 && m >= 10);
+            });
+            setHonorarios(filtradosHons.length > 0 ? filtradosHons : initialHonorarios);
+          }
+        } catch {}
       } else {
         setHonorarios(initialHonorarios);
       }
@@ -1155,6 +1171,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ]
     };
     saveClientes([novoCliente, ...clientes]);
+
+    // Se o cliente possuir honorário mensal cadastrado, gera o lançamento financeiro em tempo real para 10/2026
+    if (clienteData.honorario_mensal && clienteData.honorario_mensal > 0) {
+      const diaVenc = String(clienteData.dia_vencimento || 15).padStart(2, '0');
+      const novoHon: HonorarioItem = {
+        id: `hon-10_2026-${novoCliente.id}-${Date.now()}`,
+        cliente_id: novoCliente.id,
+        cliente_nome: novoCliente.nome,
+        contato_nome: novoCliente.responsavel || novoCliente.nome.split(' ')[0],
+        contato_telefone: novoCliente.whatsapp || novoCliente.telefone,
+        competencia: '10/2026',
+        valor: clienteData.honorario_mensal,
+        data_vencimento: `2026-10-${diaVenc}`,
+        status: 'Pendente',
+        parcela_info: 'Mensalidade 10/2026',
+        created_at: new Date().toISOString().split('T')[0]
+      };
+      saveHonorarios([novoHon, ...honorarios]);
+    }
   };
 
   const updateCliente = (id: string, updates: Partial<Cliente>, motivoAlteracao?: string) => {
@@ -1178,6 +1213,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
     });
     saveClientes(updated);
+
+    // Sincronização em tempo real com os lançamentos de honorários no módulo Financeiro
+    if (
+      updates.honorario_mensal !== undefined ||
+      updates.nome !== undefined ||
+      updates.dia_vencimento !== undefined ||
+      updates.whatsapp !== undefined ||
+      updates.responsavel !== undefined
+    ) {
+      let houveAlteracao = false;
+      const updatedHons = honorarios.map(h => {
+        if (h.cliente_id === id && h.status !== 'Pago') {
+          houveAlteracao = true;
+          let novaDataVenc = h.data_vencimento;
+          if (updates.dia_vencimento !== undefined && h.data_vencimento) {
+            const parts = h.data_vencimento.split('-');
+            if (parts.length === 3) {
+              novaDataVenc = `${parts[0]}-${parts[1]}-${String(updates.dia_vencimento).padStart(2, '0')}`;
+            }
+          }
+          return {
+            ...h,
+            cliente_nome: updates.nome !== undefined ? updates.nome : h.cliente_nome,
+            valor: updates.honorario_mensal !== undefined ? updates.honorario_mensal : h.valor,
+            data_vencimento: novaDataVenc,
+            contato_telefone: updates.whatsapp !== undefined ? updates.whatsapp : h.contato_telefone,
+            contato_nome: updates.responsavel !== undefined ? updates.responsavel : h.contato_nome
+          };
+        }
+        return h;
+      });
+
+      // Se o cliente tem honorário mensal e ainda não tem lançamento em 10/2026, cria imediatamente
+      const jaTemHon10 = updatedHons.some(h => h.cliente_id === id && h.competencia === '10/2026');
+      if (!jaTemHon10 && updates.honorario_mensal && updates.honorario_mensal > 0) {
+        const clienteAlvo = updated.find(c => c.id === id);
+        if (clienteAlvo && clienteAlvo.status === 'Ativo') {
+          const diaVenc = String(updates.dia_vencimento || clienteAlvo.dia_vencimento || 15).padStart(2, '0');
+          updatedHons.unshift({
+            id: `hon-10_2026-${id}-${Date.now()}`,
+            cliente_id: id,
+            cliente_nome: updates.nome || clienteAlvo.nome,
+            contato_nome: updates.responsavel || clienteAlvo.responsavel || clienteAlvo.nome.split(' ')[0],
+            contato_telefone: updates.whatsapp || clienteAlvo.whatsapp || clienteAlvo.telefone,
+            competencia: '10/2026',
+            valor: updates.honorario_mensal,
+            data_vencimento: `2026-10-${diaVenc}`,
+            status: 'Pendente',
+            parcela_info: 'Mensalidade 10/2026',
+            created_at: new Date().toISOString().split('T')[0]
+          });
+          houveAlteracao = true;
+        }
+      }
+
+      if (houveAlteracao) {
+        saveHonorarios(updatedHons);
+      }
+    }
   };
 
   const alternarStatusCliente = (id: string) => {
@@ -1458,6 +1552,116 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       msg,
       hon.id
     );
+  };
+
+  const atualizarHonorario = (id: string, updates: Partial<HonorarioItem>, atualizarClienteContratual = true) => {
+    let clienteIdParaAtualizar: string | undefined;
+    let novoValorHonorario: number | undefined;
+
+    const updated = honorarios.map(h => {
+      if (h.id === id) {
+        clienteIdParaAtualizar = h.cliente_id;
+        if (updates.valor !== undefined) novoValorHonorario = updates.valor;
+        return {
+          ...h,
+          ...updates
+        };
+      }
+      return h;
+    });
+
+    saveHonorarios(updated);
+
+    // Se solicitado e o valor mudou, sincroniza também o valor contratual mensal do cliente em ClientesView / Dashboard
+    if (atualizarClienteContratual && clienteIdParaAtualizar && novoValorHonorario !== undefined && novoValorHonorario > 0) {
+      const cliAtual = clientes.find(c => c.id === clienteIdParaAtualizar);
+      if (cliAtual && cliAtual.honorario_mensal !== novoValorHonorario) {
+        updateCliente(
+          clienteIdParaAtualizar,
+          { honorario_mensal: novoValorHonorario },
+          `Honorário mensal ajustado no módulo Financeiro para R$ ${novoValorHonorario.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+        );
+      }
+    }
+  };
+
+  const adicionarHonorario = (honData: Omit<HonorarioItem, 'id' | 'created_at'>, atualizarClienteContratual = false) => {
+    const novoHon: HonorarioItem = {
+      ...honData,
+      id: `hon-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      created_at: new Date().toISOString().split('T')[0]
+    };
+
+    saveHonorarios([novoHon, ...honorarios]);
+
+    if (atualizarClienteContratual && honData.cliente_id && honData.valor > 0) {
+      const cliAtual = clientes.find(c => c.id === honData.cliente_id);
+      if (cliAtual) {
+        updateCliente(
+          honData.cliente_id,
+          { honorario_mensal: honData.valor },
+          `Honorário mensal cadastrado no módulo Financeiro: R$ ${honData.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+        );
+      }
+    }
+  };
+
+  const excluirHonorario = (id: string) => {
+    const updated = honorarios.filter(h => h.id !== id);
+    saveHonorarios(updated);
+  };
+
+  const sincronizarHonorariosComClientes = (competenciaAlvo: string = '10/2026') => {
+    const [mes, ano] = competenciaAlvo.split('/');
+    let countAtualizados = 0;
+
+    const ativos = clientes.filter(c => c.status === 'Ativo' && c.honorario_mensal > 0);
+    const honsMap = new Map<string, HonorarioItem>();
+    honorarios.forEach(h => {
+      if (h.competencia === competenciaAlvo) {
+        honsMap.set(h.cliente_id, h);
+      }
+    });
+
+    const novosHons: HonorarioItem[] = [];
+    const honsAtualizados = honorarios.map(h => {
+      if (h.competencia === competenciaAlvo && h.status !== 'Pago') {
+        const cli = clientes.find(c => c.id === h.cliente_id);
+        if (cli && cli.honorario_mensal !== h.valor) {
+          countAtualizados++;
+          return {
+            ...h,
+            valor: cli.honorario_mensal,
+            cliente_nome: cli.nome
+          };
+        }
+      }
+      return h;
+    });
+
+    ativos.forEach(cli => {
+      if (!honsMap.has(cli.id)) {
+        const diaVenc = String(cli.dia_vencimento || 15).padStart(2, '0');
+        novosHons.push({
+          id: `hon-${mes}_${ano}-${cli.id}-${Date.now()}`,
+          cliente_id: cli.id,
+          cliente_nome: cli.nome,
+          contato_nome: cli.responsavel || cli.nome.split(' ')[0],
+          contato_telefone: cli.whatsapp || cli.telefone,
+          competencia: competenciaAlvo,
+          valor: cli.honorario_mensal,
+          data_vencimento: `${ano || '2026'}-${mes || '10'}-${diaVenc}`,
+          status: 'Pendente',
+          parcela_info: `Mensalidade ${competenciaAlvo}`,
+          created_at: new Date().toISOString().split('T')[0]
+        });
+        countAtualizados++;
+      }
+    });
+
+    const resultadoFinal = [...novosHons, ...honsAtualizados];
+    saveHonorarios(resultadoFinal);
+    return countAtualizados;
   };
 
   // ================= CRM =================
@@ -1775,6 +1979,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         receberConta,
         honorarios,
         darBaixaHonorario,
+        atualizarHonorario,
+        adicionarHonorario,
+        excluirHonorario,
+        sincronizarHonorariosComClientes,
         gerarHonorariosCompetencia,
         dispararCobrancaHonorarioWhatsApp,
         gerarProvisaoMensalHonorarios,

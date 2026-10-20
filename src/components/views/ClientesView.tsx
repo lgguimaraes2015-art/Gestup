@@ -159,7 +159,7 @@ export function ClientesView() {
 
     setModalEditarCliente(null);
     limparFormulario();
-    setToastMsg(`✅ Alterações do cliente salvas no histórico!`);
+    setToastMsg(`✅ Cliente atualizado: Honorário de R$ ${honorario.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} sincronizado no Financeiro em tempo real!`);
     setTimeout(() => setToastMsg(null), 4000);
   };
 

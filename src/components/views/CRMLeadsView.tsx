@@ -10,7 +10,9 @@ import {
   ArrowRight,
   MessageSquare,
   Sparkles,
-  X
+  X,
+  Target,
+  ShieldAlert
 } from 'lucide-react';
 
 interface CRMLeadsViewProps {
@@ -27,7 +29,16 @@ const estagios: CRMLeadEstagio[] = [
 ];
 
 export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
-  const { leads, addLead, updateLead, converterLeadEmCliente, colaboradores, enviarMensagemWhatsApp } = useApp();
+  const {
+    leads,
+    addLead,
+    updateLead,
+    converterLeadEmCliente,
+    colaboradores,
+    enviarMensagemWhatsApp,
+    empresasRadar,
+    setActiveTab
+  } = useApp();
 
   const [novoNome, setNovoNome] = useState('');
   const [novoEmpresa, setNovoEmpresa] = useState('');
@@ -99,6 +110,33 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
           </button>
         </div>
       )}
+
+      {/* Banner de Integração com Radar Fiscal */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 text-white p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400 flex-shrink-0">
+            <Target className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="font-bold text-sm">Radar Fiscal & Captação Ativa Receita/PGFN</h4>
+              <span className="bg-red-500/20 text-red-300 border border-red-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {empresasRadar ? empresasRadar.filter(e => e.tem_ade_ativo).length : 0} empresas com ADE Ativo
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Identifique empresas em risco de exclusão do Simples Nacional ou com Dívida Ativa da União e importe para o funil em 1 clique.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setActiveTab('radar-fiscal')}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition shadow-xs whitespace-nowrap self-end sm:self-center"
+        >
+          <span>Abrir Radar Fiscal</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
       {/* 1. CARDS DE MÉTRICAS DO PIPELINE */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -177,6 +215,19 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
 
                     <p className="text-[11px] text-slate-500">{lead.nome}</p>
                     <p className="text-[10px] text-slate-400 mt-1 line-clamp-1">{lead.servico_interesse}</p>
+
+                    {/* Alertas Fiscais do Radar */}
+                    {lead.dados_fiscais?.tem_ade_ativo && (
+                      <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-200">
+                        <ShieldAlert className="w-3 h-3 text-red-500 flex-shrink-0" />
+                        <span className="truncate">ADE Ativo (~{lead.dados_fiscais.prazo_regularizacao_dias || 30}d)</span>
+                      </div>
+                    )}
+                    {lead.dados_fiscais?.tem_divida_pgfn && !lead.dados_fiscais?.tem_ade_ativo && (
+                      <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                        <span className="truncate">⚖️ PGFN: R$ {(lead.dados_fiscais.valor_divida_pgfn || 0).toLocaleString('pt-BR')}</span>
+                      </div>
+                    )}
 
                     <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
                       <span className="text-slate-600 font-medium">{lead.responsavel}</span>

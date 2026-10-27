@@ -26,7 +26,9 @@ import {
   ConfiguracaoCobrancaEtapa,
   ContaBancaria,
   HistoricoAjusteSaldo,
-  ModeloMensagemTarefa
+  ModeloMensagemTarefa,
+  EmpresaRadarFiscal,
+  ModeloMensagemCaptação
 } from '@/types';
 import {
   initialClientes,
@@ -43,6 +45,10 @@ import {
   initialContasBancarias,
   initialModelosMensagens
 } from '@/lib/mockData';
+import {
+  initialModelosCaptação,
+  initialEmpresasRadar
+} from '@/lib/mockRadarFiscal';
 
 interface AppContextType {
   // Dados
@@ -197,6 +203,16 @@ interface AppContextType {
   addLead: (lead: Omit<CRMLead, 'id' | 'data_entrada'>) => void;
   updateLead: (id: string, updates: Partial<CRMLead>) => void;
   converterLeadEmCliente: (leadId: string) => void;
+
+  // Radar Fiscal & Captação Ativa Receita Federal / PGFN
+  empresasRadar: EmpresaRadarFiscal[];
+  modelosCaptação: ModeloMensagemCaptação[];
+  adicionarEmpresaAoRadar: (empresa: EmpresaRadarFiscal) => void;
+  atualizarEmpresaRadar: (id: string, updates: Partial<EmpresaRadarFiscal>) => void;
+  importarEmpresaRadarParaCRM: (empresaId: string, estagio?: CRMLead['estagio']) => Promise<boolean>;
+  importarEmpresasRadarLoteParaCRM: (empresaIds: string[]) => Promise<number>;
+  consultarCNPJOnline: (cnpj: string) => Promise<{ success: boolean; empresa?: EmpresaRadarFiscal; error?: string }>;
+  dispararMensagemCaptaçãoWhatsApp: (empresaId: string, mensagemTexto: string, telefoneDestino: string) => Promise<boolean>;
 
   redefinirDadosPadrao: () => void;
 }
@@ -412,6 +428,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Modelos de Mensagens Personalizadas
   const [modelosMensagens, setModelosMensagens] = useState<ModeloMensagemTarefa[]>(initialModelosMensagens);
 
+  // Radar Fiscal & Captação Ativa Receita / PGFN
+  const [empresasRadar, setEmpresasRadar] = useState<EmpresaRadarFiscal[]>(initialEmpresasRadar);
+  const [modelosCaptação, setModelosCaptação] = useState<ModeloMensagemCaptação[]>(initialModelosCaptação);
+
+  const saveEmpresasRadar = (dados: EmpresaRadarFiscal[]) => {
+    setEmpresasRadar(dados);
+    try {
+      localStorage.setItem('gestup_v2_radar_fiscal', JSON.stringify(dados));
+    } catch {}
+  };
+
   // Carregar preferência do menu recolhível
   useEffect(() => {
     try {
@@ -537,6 +564,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (savedModelos) {
         try {
           setModelosMensagens(JSON.parse(savedModelos));
+        } catch {}
+      }
+
+      // 7. Radar Fiscal & Captação Ativa
+      const savedRadar = localStorage.getItem('gestup_v2_radar_fiscal');
+      if (savedRadar) {
+        try {
+          const parsed = JSON.parse(savedRadar);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setEmpresasRadar(parsed);
+          }
         } catch {}
       }
     } catch {}
@@ -1701,6 +1739,136 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateLead(leadId, { estagio: 'Fechado' });
   };
 
+  // ================= RADAR FISCAL & CAPTAÇÃO ATIVA =================
+  const adicionarEmpresaAoRadar = (novaEmpresa: EmpresaRadarFiscal) => {
+    const cleanCnpj = (novaEmpresa.cnpj || '').replace(/\D/g, '');
+    const index = empresasRadar.findIndex(e => e.cnpj.replace(/\D/g, '') === cleanCnpj);
+    if (index >= 0) {
+      const atualizadas = [...empresasRadar];
+      atualizadas[index] = { ...atualizadas[index], ...novaEmpresa };
+      saveEmpresasRadar(atualizadas);
+    } else {
+      saveEmpresasRadar([novaEmpresa, ...empresasRadar]);
+    }
+  };
+
+  const atualizarEmpresaRadar = (id: string, updates: Partial<EmpresaRadarFiscal>) => {
+    const atualizadas = empresasRadar.map(e => e.id === id ? { ...e, ...updates } : e);
+    saveEmpresasRadar(atualizadas);
+  };
+
+  const importarEmpresaRadarParaCRM = async (empresaId: string, estagio: CRMLead['estagio'] = 'Contato'): Promise<boolean> => {
+    const emp = empresasRadar.find(e => e.id === empresaId);
+    if (!emp) return false;
+
+    const cleanCnpj = (emp.cnpj || '').replace(/\D/g, '');
+    const leadExistente = leads.find(l => (l.cpf_cnpj || '').replace(/\D/g, '') === cleanCnpj);
+    
+    const idLead = leadExistente ? leadExistente.id : `lead-${Date.now()}`;
+    
+    if (!leadExistente) {
+      const novoLead: CRMLead = {
+        id: idLead,
+        nome: emp.socio_principal || emp.razao_social,
+        empresa: emp.razao_social,
+        cpf_cnpj: emp.cnpj,
+        telefone: emp.telefone || emp.whatsapp || '',
+        whatsapp: emp.whatsapp || emp.telefone || '',
+        email: emp.email || '',
+        origem: 'Outbound',
+        servico_interesse: emp.tem_ade_ativo 
+          ? 'Regularização ADE / Simples Nacional' 
+          : (emp.tem_divida_pgfn ? 'Transação Tributária PGFN' : 'Assessoria Contábil & Fiscal'),
+        estagio: estagio,
+        prioridade: emp.tem_ade_ativo ? 'Urgente' : (emp.valor_divida_pgfn > 50000 ? 'Alta' : 'Normal'),
+        valor_estimado: emp.honorario_regularizacao_estimado || (emp.regime === 'MEI' ? 450 : 1500),
+        responsavel: 'Luiz Finup',
+        data_entrada: new Date().toISOString().split('T')[0],
+        observacoes: `Captação Ativa via Radar Fiscal GestUp.\nRegime: ${emp.regime}.\nADE Ativo: ${emp.tem_ade_ativo ? `SIM (Prazo: ${emp.prazo_regularizacao_dias || 30} dias)` : 'Não'}.\nDívida PGFN: R$ ${(emp.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${emp.tipo_divida_pgfn || 'N/A'}).\nSegmento: ${emp.segmento || emp.cnae_principal_descricao || 'Geral'}.`,
+        radar_empresa_id: emp.id,
+        dados_fiscais: {
+          regime: emp.regime,
+          optante_simples: emp.optante_simples,
+          optante_mei: emp.optante_mei,
+          tem_ade_ativo: emp.tem_ade_ativo,
+          prazo_regularizacao_dias: emp.prazo_regularizacao_dias,
+          tem_divida_pgfn: emp.tem_divida_pgfn,
+          valor_divida_pgfn: emp.valor_divida_pgfn,
+          tipo_divida_pgfn: emp.tipo_divida_pgfn,
+          tem_divida_estadual: emp.tem_divida_estadual,
+          valor_divida_estadual: emp.valor_divida_estadual,
+          uf: emp.uf,
+          municipio: emp.municipio,
+          endereco_completo: `${emp.logradouro || ''}, ${emp.numero || 'S/N'} - ${emp.bairro || ''}, ${emp.municipio}/${emp.uf}`
+        }
+      };
+      setLeads(prev => [novoLead, ...prev]);
+    }
+
+    atualizarEmpresaRadar(empresaId, {
+      status_contato: 'Importado_CRM',
+      lead_crm_id: idLead,
+      data_importacao_crm: new Date().toLocaleString('pt-BR')
+    });
+
+    return true;
+  };
+
+  const importarEmpresasRadarLoteParaCRM = async (empresaIds: string[]): Promise<number> => {
+    let count = 0;
+    for (const id of empresaIds) {
+      const ok = await importarEmpresaRadarParaCRM(id);
+      if (ok) count++;
+    }
+    return count;
+  };
+
+  const consultarCNPJOnline = async (cnpj: string): Promise<{ success: boolean; empresa?: EmpresaRadarFiscal; error?: string }> => {
+    try {
+      const res = await fetch('/api/radar-fiscal/consulta-cnpj', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cnpj })
+      });
+      const data = await res.json();
+      if (data?.success && data?.empresa) {
+        adicionarEmpresaAoRadar(data.empresa);
+        return { success: true, empresa: data.empresa };
+      }
+      return { success: false, error: data?.error || 'Falha ao consultar CNPJ' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Erro de conexão com o servidor' };
+    }
+  };
+
+  const dispararMensagemCaptaçãoWhatsApp = async (
+    empresaId: string,
+    mensagemTexto: string,
+    telefoneDestino: string
+  ): Promise<boolean> => {
+    const emp = empresasRadar.find(e => e.id === empresaId);
+    const nomeDestino = emp ? (emp.socio_principal || emp.razao_social) : 'Contato Empresa';
+    
+    const sucesso = await enviarMensagemWhatsApp(
+      'Lead',
+      nomeDestino,
+      telefoneDestino,
+      'Lembrete Prazo',
+      mensagemTexto,
+      empresaId
+    );
+
+    if (emp) {
+      atualizarEmpresaRadar(empresaId, {
+        status_contato: 'Contatado_WhatsApp',
+        mensagens_enviadas_count: (emp.mensagens_enviadas_count || 0) + 1,
+        ultima_mensagem_data: new Date().toLocaleString('pt-BR')
+      });
+    }
+
+    return sucesso;
+  };
+
   // ================= WHATSAPP =================
   const enviarMensagemWhatsApp = async (
     destinatarioTipo: 'Colaborador' | 'Cliente' | 'Lead',
@@ -1992,13 +2160,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         conciliarTransacaoOFX,
         addLead,
         updateLead,
+        converterLeadEmCliente,
+        empresasRadar,
+        modelosCaptação,
+        adicionarEmpresaAoRadar,
+        atualizarEmpresaRadar,
+        importarEmpresaRadarParaCRM,
+        importarEmpresasRadarLoteParaCRM,
+        consultarCNPJOnline,
+        dispararMensagemCaptaçãoWhatsApp,
         contasBancarias,
         historicoAjustesSaldo,
         deleteContaPagar,
         ajustarSaldoConta,
         addContaBancaria,
         redefinirFinanceiro,
-        converterLeadEmCliente,
         redefinirDadosPadrao
       }}
     >

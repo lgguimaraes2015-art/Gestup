@@ -16,6 +16,7 @@ import {
   DollarSign,
   BarChart3,
   Settings,
+  Target,
   PanelLeftClose,
   PanelLeftOpen,
   ChevronLeft,
@@ -42,10 +43,12 @@ export function Sidebar() {
     sidebarCollapsed,
     toggleSidebar,
     mobileMenuOpen,
-    setMobileMenuOpen
+    setMobileMenuOpen,
+    empresasRadar
   } = useApp();
 
   const tarefasAtrasadas = tarefas.filter(t => t.status === 'Atrasada').length;
+  const empresasComAde = empresasRadar ? empresasRadar.filter(e => e.tem_ade_ativo).length : 0;
 
   const navSections: { title: string; items: NavItemConfig[] }[] = [
     {
@@ -95,6 +98,13 @@ export function Sidebar() {
     {
       title: 'Comercial & Onboarding',
       items: [
+        {
+          id: 'radar-fiscal',
+          label: 'Radar Fiscal (Captação)',
+          icon: Target,
+          badge: empresasComAde > 0 ? `${empresasComAde} ADE` : 'NOVO',
+          highlight: 'blue'
+        },
         {
           id: 'crm-leads',
           label: 'Funil de Leads (CRM)',

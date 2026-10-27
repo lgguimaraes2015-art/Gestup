@@ -363,6 +363,22 @@ export interface CRMLead {
   tags?: string[];
   data_entrada: string;
   convertido_cliente_id?: string;
+  radar_empresa_id?: string;
+  dados_fiscais?: {
+    regime: string;
+    optante_simples: boolean;
+    optante_mei: boolean;
+    tem_ade_ativo: boolean;
+    prazo_regularizacao_dias?: number;
+    tem_divida_pgfn: boolean;
+    valor_divida_pgfn?: number;
+    tipo_divida_pgfn?: string;
+    tem_divida_estadual?: boolean;
+    valor_divida_estadual?: number;
+    uf?: string;
+    municipio?: string;
+    endereco_completo?: string;
+  };
 }
 
 export interface CRMProcedimentoTemplate {
@@ -480,3 +496,95 @@ export interface WhatsAppMensagem {
   data_envio: string;
   referencia_id?: string; // id da tarefa, documento ou lead
 }
+
+// ==================== MÓDULO RADAR FISCAL & CAPTAÇÃO ATIVA (RECEITA FEDERAL & PGFN) ====================
+
+export type StatusRiscoFiscal = 'ADE_ATIVO' | 'DIVIDA_PGFN' | 'DEBITO_PREVIDENCIARIO' | 'ALERTA_PREVENTIVO' | 'REGULAR';
+export type StatusContatoRadar = 'Novo' | 'Importado_CRM' | 'Contatado_WhatsApp' | 'Em_Negociacao' | 'Descartado';
+
+export interface SocioEmpresaRadar {
+  nome: string;
+  qualificacao: string;
+  faixa_etaria?: string;
+}
+
+export interface EmpresaRadarFiscal {
+  id: string;
+  cnpj: string;
+  razao_social: string;
+  nome_fantasia?: string;
+  situacao_cadastral: 'Ativa' | 'Baixada' | 'Suspensa' | 'Inapta';
+  data_abertura?: string;
+  regime: 'Simples Nacional' | 'MEI' | 'Lucro Presumido' | 'Lucro Real';
+  optante_simples: boolean;
+  optante_mei: boolean;
+  
+  // Status de Débitos e Alertas Fiscais
+  tem_ade_ativo: boolean; // Ato Declaratório Executivo da Receita Federal (Risco de exclusão)
+  data_ade?: string;
+  prazo_regularizacao_dias?: number;
+  motivo_ade?: string;
+  
+  tem_divida_pgfn: boolean; // Dívida Ativa da União (Procuradoria-Geral da Fazenda Nacional)
+  valor_divida_pgfn: number;
+  tipo_divida_pgfn?: 'Tributária' | 'Previdenciária' | 'FGTS' | 'Multa Eleitoral/Trabalhista' | 'Mista';
+  inscricoes_pgfn_count?: number;
+  
+  tem_divida_estadual?: boolean;
+  valor_divida_estadual?: number;
+  
+  // Localização e Endereço Completo
+  uf: string;
+  municipio: string;
+  bairro?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  cep?: string;
+  
+  // Contatos para Abordagem
+  telefone: string;
+  telefone_secundario?: string;
+  whatsapp?: string;
+  email?: string;
+  
+  // Segmento e Atividade Econômica
+  cnae_principal_codigo?: string;
+  cnae_principal_descricao?: string;
+  segmento?: string; // ex: 'Comércio Varejista', 'Restaurantes & Bares', 'Construção Civil', 'Serviços'
+  
+  // Quadro Societário (QSA)
+  socios?: SocioEmpresaRadar[];
+  socio_principal?: string;
+  
+  // Controle de Captação e CRM
+  status_contato: StatusContatoRadar;
+  lead_crm_id?: string;
+  data_importacao_crm?: string;
+  mensagens_enviadas_count: number;
+  ultima_mensagem_data?: string;
+  observacoes_captação?: string;
+  
+  // Potencial de Honorário de Regularização
+  honorario_regularizacao_estimado?: number;
+  honorario_mensal_sugerido?: number;
+}
+
+export interface FiltrosRadarFiscal {
+  uf: string;
+  municipio: string;
+  termoBusca?: string;
+  regime: 'todos' | 'simples' | 'mei' | 'outros';
+  statusRisco: 'todos' | 'ade_ativo' | 'pgfn' | 'regular';
+  faixaDebito: 'todos' | 'ate_10k' | '10k_50k' | '50k_150k' | 'acima_150k';
+  segmento?: string;
+}
+
+export interface ModeloMensagemCaptação {
+  id: string;
+  titulo: string;
+  descricao: string;
+  tipo_alvo: 'ADE_SIMPLES' | 'DIVIDA_PGFN' | 'MEI_DAS' | 'PREVENTIVO';
+  texto: string;
+}
+

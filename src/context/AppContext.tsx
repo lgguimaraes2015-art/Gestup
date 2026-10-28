@@ -213,6 +213,13 @@ interface AppContextType {
   importarEmpresasRadarLoteParaCRM: (empresaIds: string[]) => Promise<number>;
   consultarCNPJOnline: (cnpj: string) => Promise<{ success: boolean; empresa?: EmpresaRadarFiscal; error?: string }>;
   dispararMensagemCaptaçãoWhatsApp: (empresaId: string, mensagemTexto: string, telefoneDestino: string) => Promise<boolean>;
+  capturarNovasEmpresasPublicas: (filtros: {
+    uf: string;
+    municipio: string;
+    regime: 'todos' | 'simples' | 'mei' | 'normal';
+    possuiDebitos: 'todos' | 'com_debitos' | 'sem_debitos';
+    quantidade?: number;
+  }) => Promise<{ success: boolean; totalCapturadas: number; novas: EmpresaRadarFiscal[]; error?: string }>;
 
   redefinirDadosPadrao: () => void;
 }
@@ -1869,6 +1876,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return sucesso;
   };
 
+  const capturarNovasEmpresasPublicas = async (filtros: {
+    uf: string;
+    municipio: string;
+    regime: 'todos' | 'simples' | 'mei' | 'normal';
+    possuiDebitos: 'todos' | 'com_debitos' | 'sem_debitos';
+    quantidade?: number;
+  }): Promise<{ success: boolean; totalCapturadas: number; novas: EmpresaRadarFiscal[]; error?: string }> => {
+    try {
+      const res = await fetch('/api/radar-fiscal/capturar-publico', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filtros)
+      });
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.empresas)) {
+        const novas = data.empresas as EmpresaRadarFiscal[];
+        setEmpresasRadar(prev => {
+          const existentesCnpjs = new Set(prev.map(e => e.cnpj.replace(/\D/g, '')));
+          const filtradasNovas = novas.filter(n => !existentesCnpjs.has(n.cnpj.replace(/\D/g, '')));
+          const atualizadas = [...filtradasNovas, ...prev];
+          try {
+            localStorage.setItem('gestup_v2_radar_fiscal', JSON.stringify(atualizadas));
+          } catch {}
+          return atualizadas;
+        });
+
+        return {
+          success: true,
+          totalCapturadas: data.totalCapturadas || novas.length,
+          novas: data.empresas
+        };
+      }
+      return { success: false, totalCapturadas: 0, novas: [], error: data?.error || 'Erro na varredura pública' };
+    } catch (err: any) {
+      return { success: false, totalCapturadas: 0, novas: [], error: err?.message || 'Falha na conexão' };
+    }
+  };
+
   // ================= WHATSAPP =================
   const enviarMensagemWhatsApp = async (
     destinatarioTipo: 'Colaborador' | 'Cliente' | 'Lead',
@@ -2169,6 +2214,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         importarEmpresasRadarLoteParaCRM,
         consultarCNPJOnline,
         dispararMensagemCaptaçãoWhatsApp,
+        capturarNovasEmpresasPublicas,
         contasBancarias,
         historicoAjustesSaldo,
         deleteContaPagar,

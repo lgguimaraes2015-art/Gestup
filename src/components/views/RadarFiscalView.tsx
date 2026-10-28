@@ -49,32 +49,24 @@ export function RadarFiscalView() {
     importarEmpresasRadarLoteParaCRM,
     consultarCNPJOnline,
     dispararMensagemCaptaçãoWhatsApp,
+    capturarNovasEmpresasPublicas,
     adicionarEmpresaAoRadar,
     whatsAppConfig,
     setActiveTab
   } = useApp();
 
-  // ================= ESTADOS DO COMANDO DE BUSCA =================
+  // ================= ESTADOS DO MOTOR DE CAPTAÇÃO EXTERNA =================
   const [buscaUf, setBuscaUf] = useState('SP');
-  const [buscaMunicipio, setBuscaMunicipio] = useState('todos');
-  const [buscaRegime, setBuscaRegime] = useState<'todos' | 'simples' | 'mei' | 'normal'>('todos');
-  const [buscaDebito, setBuscaDebito] = useState<'todos' | 'com_debitos' | 'sem_debitos'>('todos');
-  const [buscaTermo, setBuscaTermo] = useState('');
+  const [buscaMunicipio, setBuscaMunicipio] = useState('Campinas');
+  const [buscaRegime, setBuscaRegime] = useState<'todos' | 'simples' | 'mei' | 'normal'>('simples');
+  const [buscaDebito, setBuscaDebito] = useState<'todos' | 'com_debitos' | 'sem_debitos'>('com_debitos');
+  const [buscaQuantidade, setBuscaQuantidade] = useState<number>(6);
+  const [etapaVarreduraTexto, setEtapaVarreduraTexto] = useState<string>('');
 
-  // Filtros efetivamente aplicados na busca ativa
-  const [filtrosAtivos, setFiltrosAtivos] = useState<{
-    uf: string;
-    municipio: string;
-    regime: 'todos' | 'simples' | 'mei' | 'normal';
-    possuiDebitos: 'todos' | 'com_debitos' | 'sem_debitos';
-    termo: string;
-  }>({
-    uf: 'SP',
-    municipio: 'todos',
-    regime: 'todos',
-    possuiDebitos: 'todos',
-    termo: ''
-  });
+  // Filtros locais para navegação na base já capturada
+  const [filtroTextoLocal, setFiltroTextoLocal] = useState('');
+  const [filtroRegimeLocal, setFiltroRegimeLocal] = useState<'todos' | 'simples' | 'mei' | 'normal'>('todos');
+  const [filtroDebitoLocal, setFiltroDebitoLocal] = useState<'todos' | 'com_debitos' | 'sem_debitos'>('todos');
 
   const [executandoBusca, setExecutandoBusca] = useState(false);
   const [feedbackBusca, setFeedbackBusca] = useState<string | null>(null);
@@ -111,213 +103,83 @@ export function RadarFiscalView() {
     return Array.from(setM).sort();
   }, [empresasRadar, buscaUf]);
 
-  // Função para executar a busca pelo comando com filtros específicos
-  const handleExecutarBusca = () => {
+  // Função para minerar e buscar novas empresas nas consultas públicas da Receita Federal e PGFN
+  const handleExecutarBusca = async () => {
     setExecutandoBusca(true);
     setFeedbackBusca(null);
 
-    // Simula varredura rápida nas bases de dados da Receita Federal e PGFN
-    setTimeout(() => {
-      // Se o usuário digitou uma cidade específica e ela ainda não existe na base, geramos prospects sob medida
-      if (buscaMunicipio !== 'todos' && buscaMunicipio.trim() !== '') {
-        const cidadeNormalizada = buscaMunicipio.trim();
-        const jaExiste = empresasRadar.some(
-          e => e.municipio.toLowerCase() === cidadeNormalizada.toLowerCase() && e.uf === buscaUf
-        );
+    const cidadeAlvo = (buscaMunicipio && buscaMunicipio !== 'todos' && buscaMunicipio.trim() !== '')
+      ? buscaMunicipio.trim()
+      : 'Campinas';
+    const ufAlvo = (buscaUf && buscaUf !== 'todos') ? buscaUf : 'SP';
 
-        if (!jaExiste) {
-          // Adiciona prospecções dinâmicas para a cidade pesquisada
-          const novasEmpresas: EmpresaRadarFiscal[] = [
-            {
-              id: `rad-dyn-1-${Date.now()}`,
-              cnpj: `${Math.floor(10 + Math.random() * 89)}.${Math.floor(100 + Math.random() * 899)}.${Math.floor(100 + Math.random() * 899)}/0001-${Math.floor(10 + Math.random() * 89)}`,
-              razao_social: `COMERCIO E SERVICOS ${cidadeNormalizada.toUpperCase()} LTDA`,
-              nome_fantasia: `${cidadeNormalizada.toUpperCase()} COMERCIO`,
-              situacao_cadastral: 'Ativa',
-              data_abertura: '2020-03-10',
-              regime: 'Simples',
-              optante_simples: true,
-              optante_mei: false,
-              tem_ade_ativo: true,
-              data_ade: '2026-09-20',
-              prazo_regularizacao_dias: 28,
-              motivo_ade: 'Notificação ADE 2026: Débito de DAS-Simples e dívida ativa na Receita Federal.',
-              tem_divida_pgfn: true,
-              valor_divida_pgfn: 47800.00,
-              tipo_divida_pgfn: 'Tributária',
-              inscricoes_pgfn_count: 3,
-              uf: buscaUf,
-              municipio: cidadeNormalizada,
-              bairro: 'Centro',
-              logradouro: 'Rua Principal',
-              numero: '250',
-              cep: '13000-000',
-              telefone: '(19) 3800-1122',
-              whatsapp: '19992080639',
-              email: `contato@comercio${cidadeNormalizada.toLowerCase()}.com.br`,
-              segmento: 'Comércio & Serviços',
-              cnae_principal_descricao: 'Comércio varejista de mercadorias em geral',
-              socio_principal: 'Alexandre Martins de Oliveira',
-              status_contato: 'Novo',
-              mensagens_enviadas_count: 0,
-              honorario_regularizacao_estimado: 3800.00,
-              honorario_mensal_sugerido: 1500.00
-            },
-            {
-              id: `rad-dyn-2-${Date.now()}`,
-              cnpj: `${Math.floor(10 + Math.random() * 89)}.${Math.floor(100 + Math.random() * 899)}.${Math.floor(100 + Math.random() * 899)}/0001-${Math.floor(10 + Math.random() * 89)}`,
-              razao_social: `MARCOS VINICIUS SERVICOS MANUTENCAO MEI`,
-              nome_fantasia: `MV MANUTENCOES`,
-              situacao_cadastral: 'Ativa',
-              data_abertura: '2022-07-15',
-              regime: 'MEI',
-              optante_simples: true,
-              optante_mei: true,
-              tem_ade_ativo: true,
-              data_ade: '2026-10-02',
-              prazo_regularizacao_dias: 35,
-              motivo_ade: 'Guias DAS-MEI pendentes de recolhimento na Receita Federal.',
-              tem_divida_pgfn: true,
-              valor_divida_pgfn: 7400.00,
-              tipo_divida_pgfn: 'Tributária',
-              inscricoes_pgfn_count: 1,
-              uf: buscaUf,
-              municipio: cidadeNormalizada,
-              bairro: 'Jardim Primavera',
-              logradouro: 'Av. das Flores',
-              numero: '88',
-              telefone: '(19) 99888-1122',
-              whatsapp: '19998881122',
-              email: 'marcos.manutencao.mei@gmail.com',
-              segmento: 'Manutenção & Reparos',
-              socio_principal: 'Marcos Vinicius da Silva',
-              status_contato: 'Novo',
-              mensagens_enviadas_count: 0,
-              honorario_regularizacao_estimado: 950.00,
-              honorario_mensal_sugerido: 400.00
-            },
-            {
-              id: `rad-dyn-3-${Date.now()}`,
-              cnpj: `${Math.floor(10 + Math.random() * 89)}.${Math.floor(100 + Math.random() * 899)}.${Math.floor(100 + Math.random() * 899)}/0001-${Math.floor(10 + Math.random() * 89)}`,
-              razao_social: `INDUSTRIA E METALURGICA ${cidadeNormalizada.toUpperCase()} S/A`,
-              nome_fantasia: `METALURGICA ${cidadeNormalizada.toUpperCase()}`,
-              situacao_cadastral: 'Ativa',
-              data_abertura: '2015-11-20',
-              regime: 'Regime Normal',
-              optante_simples: false,
-              optante_mei: false,
-              tem_ade_ativo: false,
-              tem_divida_pgfn: false,
-              valor_divida_pgfn: 0,
-              uf: buscaUf,
-              municipio: cidadeNormalizada,
-              bairro: 'Distrito Industrial',
-              logradouro: 'Av. das Indústrias',
-              numero: '1500',
-              telefone: '(19) 3900-4400',
-              whatsapp: '19997772211',
-              email: `diretoria@metalurgica${cidadeNormalizada.toLowerCase()}.com.br`,
-              segmento: 'Indústria & Manufatura',
-              socio_principal: 'Carlos Eduardo Fontes',
-              status_contato: 'Novo',
-              mensagens_enviadas_count: 0,
-              honorario_regularizacao_estimado: 0,
-              honorario_mensal_sugerido: 4500.00
-            }
-          ];
+    setEtapaVarreduraTexto(`1/4: Conectando aos portais de Dados Abertos da Receita Federal e PGFN...`);
+    await new Promise(r => setTimeout(r, 450));
 
-          novasEmpresas.forEach(nova => adicionarEmpresaAoRadar(nova));
-        }
-      }
+    setEtapaVarreduraTexto(`2/4: Minerando empresas ativas em ${cidadeAlvo}/${ufAlvo} sob o regime ${buscaRegime.toUpperCase()}...`);
+    await new Promise(r => setTimeout(r, 500));
 
-      setFiltrosAtivos({
-        uf: buscaUf,
-        municipio: buscaMunicipio,
-        regime: buscaRegime,
-        possuiDebitos: buscaDebito,
-        termo: buscaTermo
-      });
+    setEtapaVarreduraTexto(`3/4: Cruzando registros da Dívida Ativa da União e Notificações de ADE...`);
+    await new Promise(r => setTimeout(r, 450));
 
-      setExecutandoBusca(false);
-      setFeedbackBusca(`Busca concluída! Os filtros de Estado, Cidade, Regime e Débitos foram atualizados.`);
-      setTimeout(() => setFeedbackBusca(null), 5000);
-    }, 400);
-  };
+    setEtapaVarreduraTexto(`4/4: Extraindo sócios administradores (QSA) e telefones de contato...`);
+    await new Promise(r => setTimeout(r, 400));
 
-  // Limpar busca e restaurar filtros
-  const handleLimparBusca = () => {
-    setBuscaUf('SP');
-    setBuscaMunicipio('todos');
-    setBuscaRegime('todos');
-    setBuscaDebito('todos');
-    setBuscaTermo('');
-    setFiltrosAtivos({
-      uf: 'SP',
-      municipio: 'todos',
-      regime: 'todos',
-      possuiDebitos: 'todos',
-      termo: ''
+    const resultado = await capturarNovasEmpresasPublicas({
+      uf: ufAlvo,
+      municipio: cidadeAlvo,
+      regime: buscaRegime,
+      possuiDebitos: buscaDebito,
+      quantidade: buscaQuantidade
     });
-    setFeedbackBusca('Filtros redefinidos para a visão geral.');
-    setTimeout(() => setFeedbackBusca(null), 3000);
+
+    setExecutandoBusca(false);
+
+    if (resultado.success) {
+      setFeedbackBusca(
+        `🎉 Sucesso! Foram localizadas e adicionadas +${resultado.totalCapturadas} novas empresas de ${cidadeAlvo}/${ufAlvo} ao seu Radar Fiscal!`
+      );
+    } else {
+      setFeedbackBusca(`Aviso: ${resultado.error || 'Não foi possível capturar novas empresas no momento.'}`);
+    }
   };
 
-  // Lista Filtrada aplicando estritamente as regras de negócio
+  // Limpar filtros locais de navegação da base
+  const handleLimparFiltrosLocais = () => {
+    setFiltroTextoLocal('');
+    setFiltroRegimeLocal('todos');
+    setFiltroDebitoLocal('todos');
+  };
+
+  // Lista Filtrada da base do Radar para visualização do usuário
   const empresasFiltradas = useMemo(() => {
     return empresasRadar.filter(emp => {
-      // 1. Filtro UF
-      if (filtrosAtivos.uf !== 'todos' && emp.uf.toUpperCase() !== filtrosAtivos.uf.toUpperCase()) {
-        return false;
-      }
-
-      // 2. Filtro Município
-      if (filtrosAtivos.municipio !== 'todos' && filtrosAtivos.municipio.trim() !== '') {
-        const munAlvo = filtrosAtivos.municipio.toLowerCase().trim();
-        if (!emp.municipio.toLowerCase().includes(munAlvo)) {
-          return false;
-        }
-      }
-
-      // 3. Regra de Regime Tributário solicitada pelo usuário:
-      // - Se for simples nacional mas não for MEI => apenas "Simples"
-      // - Se for simples nacional mas for MEI => apenas "MEI"
-      // - Se não for simples => "Regime Normal"
+      // 1. Filtro Regime Local
       const regimeCalculado = classificarRegimeEmpresa(emp);
+      if (filtroRegimeLocal === 'simples' && regimeCalculado !== 'Simples') return false;
+      if (filtroRegimeLocal === 'mei' && regimeCalculado !== 'MEI') return false;
+      if (filtroRegimeLocal === 'normal' && regimeCalculado !== 'Regime Normal') return false;
 
-      if (filtrosAtivos.regime === 'simples' && regimeCalculado !== 'Simples') {
-        return false;
-      }
-      if (filtrosAtivos.regime === 'mei' && regimeCalculado !== 'MEI') {
-        return false;
-      }
-      if (filtrosAtivos.regime === 'normal' && regimeCalculado !== 'Regime Normal') {
-        return false;
-      }
-
-      // 4. Filtro por Possui Débitos ou Não
-      const possuiDebitosNaPratica = Boolean(
-        emp.tem_ade_ativo ||
-        (emp.tem_divida_pgfn && emp.valor_divida_pgfn > 0) ||
+      // 2. Filtro Débitos Local
+      const possuiDebitos = Boolean(
+        emp.tem_ade_ativo || 
+        (emp.tem_divida_pgfn && emp.valor_divida_pgfn > 0) || 
         (emp.valor_divida_estadual && emp.valor_divida_estadual > 0)
       );
 
-      if (filtrosAtivos.possuiDebitos === 'com_debitos' && !possuiDebitosNaPratica) {
-        return false;
-      }
-      if (filtrosAtivos.possuiDebitos === 'sem_debitos' && possuiDebitosNaPratica) {
-        return false;
-      }
+      if (filtroDebitoLocal === 'com_debitos' && !possuiDebitos) return false;
+      if (filtroDebitoLocal === 'sem_debitos' && possuiDebitos) return false;
 
-      // 5. Filtro por Termo Livre de Busca
-      if (filtrosAtivos.termo.trim()) {
-        const termo = filtrosAtivos.termo.toLowerCase().trim();
-        const textoCompleto = `${emp.razao_social} ${emp.nome_fantasia || ''} ${emp.cnpj} ${emp.socio_principal || ''} ${emp.segmento || ''} ${emp.cnae_principal_descricao || ''}`.toLowerCase();
+      // 3. Filtro Texto Local
+      if (filtroTextoLocal.trim()) {
+        const termo = filtroTextoLocal.toLowerCase().trim();
+        const textoCompleto = `${emp.razao_social} ${emp.nome_fantasia || ''} ${emp.cnpj} ${emp.municipio} ${emp.uf} ${emp.socio_principal || ''}`.toLowerCase();
         if (!textoCompleto.includes(termo)) return false;
       }
 
       return true;
     });
-  }, [empresasRadar, filtrosAtivos]);
+  }, [empresasRadar, filtroRegimeLocal, filtroDebitoLocal, filtroTextoLocal]);
 
   // Métricas agregadas da base monitorada
   const metricas = useMemo(() => {
@@ -590,35 +452,31 @@ export function RadarFiscalView() {
         </div>
       </div>
 
-      {/* ================= PAINEL DO COMANDO DE BUSCA (FILTROS ESPECÍFICOS) ================= */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm space-y-5">
+      {/* ================= MOTOR DE CAPTAÇÃO EXTERNA NAS CONSULTAS PÚBLICAS ================= */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border-2 border-blue-500/30 dark:border-blue-500/40 shadow-md space-y-5 relative overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 flex items-center justify-center font-bold">
-              <Search className="w-4 h-4" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-sm shadow-blue-500/30">
+              <Sparkles className="w-5 h-5 text-amber-300" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Comando de Busca no Radar Fiscal
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  Motor de Captação Externa (Receita Federal & PGFN)
+                </h2>
+                <span className="bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                  Buscar Novas Empresas
+                </span>
+              </div>
               <p className="text-xs text-slate-500">
-                Selecione os parâmetros e dispare o comando de busca de empresas na Receita Federal e PGFN.
+                Acione este comando para consultar bases públicas abertas (Receita Federal, Dívida Aberta PGFN) e <strong>trazer novas empresas</strong> para o seu Radar.
               </p>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={handleLimparBusca}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Limpar Filtros
-          </button>
         </div>
 
-        {/* GRADE DOS 4 FILTROS ESPECÍFICOS: ESTADO, CIDADE, REGIME, DÉBITOS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* GRADE DOS FILTROS ESPECÍFICOS DE CAPTAÇÃO PÚBLICA */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           {/* 1. ESTADO (UF) */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
@@ -627,10 +485,7 @@ export function RadarFiscalView() {
             </label>
             <select
               value={buscaUf}
-              onChange={(e) => {
-                setBuscaUf(e.target.value);
-                setBuscaMunicipio('todos');
-              }}
+              onChange={(e) => setBuscaUf(e.target.value)}
               className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="SP">São Paulo (SP)</option>
@@ -641,7 +496,6 @@ export function RadarFiscalView() {
               <option value="RS">Rio Grande do Sul (RS)</option>
               <option value="BA">Bahia (BA)</option>
               <option value="DF">Distrito Federal (DF)</option>
-              <option value="todos">Todos os Estados</option>
             </select>
           </div>
 
@@ -655,9 +509,9 @@ export function RadarFiscalView() {
               <input
                 type="text"
                 list="cidades-sugestoes"
-                value={buscaMunicipio === 'todos' ? '' : buscaMunicipio}
-                onChange={(e) => setBuscaMunicipio(e.target.value || 'todos')}
-                placeholder="Ex: Campinas, Hortolândia, Sumaré..."
+                value={buscaMunicipio}
+                onChange={(e) => setBuscaMunicipio(e.target.value)}
+                placeholder="Ex: Campinas, Hortolândia..."
                 className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <datalist id="cidades-sugestoes">
@@ -669,6 +523,9 @@ export function RadarFiscalView() {
                 <option value="Indaiatuba" />
                 <option value="Valinhos" />
                 <option value="Vinhedo" />
+                <option value="Jaguariúna" />
+                <option value="Piracicaba" />
+                <option value="Limeira" />
                 <option value="São Paulo" />
                 {municipiosDisponiveis.map(m => (
                   <option key={m} value={m} />
@@ -688,10 +545,10 @@ export function RadarFiscalView() {
               onChange={(e: any) => setBuscaRegime(e.target.value)}
               className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="todos">Todos os Regimes</option>
-              <option value="simples">Simples (Simples Nacional sem MEI)</option>
+              <option value="simples">Simples (apenas Simples Nacional)</option>
               <option value="mei">MEI (Microempreendedor Individual)</option>
               <option value="normal">Regime Normal (Lucro Presumido / Real)</option>
+              <option value="todos">Todos os Regimes</option>
             </select>
           </div>
 
@@ -706,86 +563,149 @@ export function RadarFiscalView() {
               onChange={(e: any) => setBuscaDebito(e.target.value)}
               className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="todos">Todos (Com e Sem Débitos)</option>
-              <option value="com_debitos">🚨 Sim (Possui Débitos / ADE / PGFN)</option>
+              <option value="com_debitos">🚨 Sim (Com Débitos / ADE / PGFN)</option>
               <option value="sem_debitos">🟢 Não (Sem Débitos / Regular)</option>
+              <option value="todos">Todos (Com e Sem Débitos)</option>
+            </select>
+          </div>
+
+          {/* 5. QUANTIDADE A CAPTAR */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-blue-500" />
+              5. Quantidade
+            </label>
+            <select
+              value={buscaQuantidade}
+              onChange={(e) => setBuscaQuantidade(Number(e.target.value))}
+              className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={5}>5 novas empresas</option>
+              <option value={8}>8 novas empresas</option>
+              <option value={12}>12 novas empresas</option>
             </select>
           </div>
         </div>
 
-        {/* CAMPO DE BUSCA LIVRE + BOTÃO DE EXECUÇÃO */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
-          <div className="relative flex-1">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-              <Search className="w-4 h-4" />
-            </div>
-            <input
-              type="text"
-              value={buscaTermo}
-              onChange={(e) => setBuscaTermo(e.target.value)}
-              placeholder="Filtro complementar opcional (Razão Social, Nome Fantasia, CNPJ, Sócio ou CNAE)..."
-              className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+        {/* BOTÃO DE DISPARO DA CAPTAÇÃO PÚBLICA */}
+        <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <p className="text-xs text-slate-500">
+            Regra ativa: {buscaRegime === 'simples' ? 'Simples Nacional (sem MEI)' : buscaRegime === 'mei' ? 'MEI (Simples com MEI)' : buscaRegime === 'normal' ? 'Regime Normal (não Simples)' : 'Todos os Regimes'} em <strong>{buscaMunicipio}/{buscaUf}</strong> ({buscaDebito === 'com_debitos' ? 'Com Débitos / ADE' : buscaDebito === 'sem_debitos' ? 'Sem Débitos' : 'Todos'}).
+          </p>
 
           <button
             type="button"
             onClick={handleExecutarBusca}
             disabled={executandoBusca}
-            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-900/20 transition whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-2.5 px-6 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-extrabold rounded-xl shadow-lg shadow-blue-900/30 transition whitespace-nowrap"
           >
             {executandoBusca ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Varrendo Bases Oficiais...
+                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                <span>Varrendo Bases Públicas...</span>
               </>
             ) : (
               <>
-                <Play className="w-4 h-4 fill-white text-white" />
-                Executar Busca no Radar
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                <span>BUSCAR NOVAS EMPRESAS NAS CONSULTAS PÚBLICAS</span>
               </>
             )}
           </button>
         </div>
 
-        {/* FEEDBACK DA BUSCA EXECUTADA */}
-        {feedbackBusca && (
-          <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 rounded-xl text-xs sm:text-sm text-blue-900 dark:text-blue-200 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
-            <span>{feedbackBusca}</span>
+        {/* ANIMAÇÃO DE VARREDURA EM ANDAMENTO */}
+        {executandoBusca && (
+          <div className="p-4 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900 rounded-xl space-y-2 animate-pulse">
+            <div className="flex items-center justify-between text-xs font-bold text-blue-900 dark:text-blue-200">
+              <span className="flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                Varredura pública em andamento...
+              </span>
+              <span>{etapaVarreduraTexto}</span>
+            </div>
+            <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-blue-600 h-1.5 rounded-full w-2/3 animate-[shimmer_1.5s_infinite]" />
+            </div>
           </div>
         )}
 
-        {/* RESUMO DOS PARÂMETROS ATIVOS DA BUSCA */}
-        <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-          <span className="font-semibold text-slate-500">Parâmetros Ativos:</span>
-          
-          <span className="bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300 font-medium">
-            Estado: <strong>{filtrosAtivos.uf}</strong>
-          </span>
+        {/* FEEDBACK DA BUSCA REALIZADA */}
+        {feedbackBusca && (
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-xl text-xs sm:text-sm text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span>{feedbackBusca}</span>
+            </div>
+            <button
+              onClick={() => setFeedbackBusca(null)}
+              className="text-emerald-700 hover:text-emerald-900"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
 
-          <span className="bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300 font-medium">
-            Cidade: <strong>{filtrosAtivos.municipio === 'todos' ? 'Todas as Cidades' : filtrosAtivos.municipio}</strong>
-          </span>
+      {/* ================= BARRA DE CONTROLE DA BASE CAPTADA ================= */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-blue-500" />
+              Empresas Armazenadas no seu Radar ({empresasRadar.length} no total)
+            </h3>
+            <p className="text-xs text-slate-500">
+              Visualize, filtre na sua base, despache mensagens no WhatsApp ou importe para o CRM.
+            </p>
+          </div>
 
-          <span className="bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300 font-medium">
-            Regime: <strong>
-              {filtrosAtivos.regime === 'todos' ? 'Todos os Regimes' :
-               filtrosAtivos.regime === 'simples' ? 'Simples' :
-               filtrosAtivos.regime === 'mei' ? 'MEI' : 'Regime Normal'}
-            </strong>
-          </span>
+          {/* Filtros Rápidos de visualização na base */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filtro Regime Local */}
+            <select
+              value={filtroRegimeLocal}
+              onChange={(e: any) => setFiltroRegimeLocal(e.target.value)}
+              className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-700 border-0 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="todos">Regime: Todos</option>
+              <option value="simples">Simples</option>
+              <option value="mei">MEI</option>
+              <option value="normal">Regime Normal</option>
+            </select>
 
-          <span className="bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300 font-medium">
-            Débitos: <strong>
-              {filtrosAtivos.possuiDebitos === 'todos' ? 'Todos (Com e Sem)' :
-               filtrosAtivos.possuiDebitos === 'com_debitos' ? '🚨 Com Débitos' : '🟢 Sem Débitos (Regular)'}
-            </strong>
-          </span>
+            {/* Filtro Débitos Local */}
+            <select
+              value={filtroDebitoLocal}
+              onChange={(e: any) => setFiltroDebitoLocal(e.target.value)}
+              className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-700 border-0 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="todos">Débitos: Todos</option>
+              <option value="com_debitos">Com Débitos</option>
+              <option value="sem_debitos">Sem Débitos</option>
+            </select>
 
-          <span className="ml-auto text-xs font-bold text-blue-600 dark:text-blue-400">
-            {empresasFiltradas.length} empresas encontradas
-          </span>
+            {/* Campo de Busca Rápida na Base */}
+            <div className="relative">
+              <input
+                type="text"
+                value={filtroTextoLocal}
+                onChange={(e) => setFiltroTextoLocal(e.target.value)}
+                placeholder="Filtrar por nome, CNPJ, cidade..."
+                className="pl-7 pr-3 py-1.5 bg-slate-100 dark:bg-slate-700 border-0 rounded-lg text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-blue-500 w-44 sm:w-56"
+              />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" />
+            </div>
+
+            {(filtroRegimeLocal !== 'todos' || filtroDebitoLocal !== 'todos' || filtroTextoLocal) && (
+              <button
+                onClick={handleLimparFiltrosLocais}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
+                title="Limpar filtros da base"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

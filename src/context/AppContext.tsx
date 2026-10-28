@@ -50,7 +50,8 @@ import {
 import {
   initialModelosCaptação,
   initialEmpresasRadar,
-  classificarRegimeEmpresa
+  classificarRegimeEmpresa,
+  parseDataHoraAgendada
 } from '@/lib/mockRadarFiscal';
 
 interface AppContextType {
@@ -589,6 +590,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
       }
+
+      // 8. Leads do CRM (Pipeline e Agendamentos)
+      const savedLeads = localStorage.getItem('gestup_v2_leads');
+      if (savedLeads) {
+        try {
+          const parsed = JSON.parse(savedLeads);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setLeads(parsed);
+          }
+        } catch {}
+      }
     } catch {}
   }, []);
 
@@ -625,6 +637,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     syncStatus();
   }, [whatsAppConfig.api_url, whatsAppConfig.api_key, whatsAppConfig.nome_instancia]);
+
+  // Monitoramento e Disparo Automático de Mensagens Agendadas no CRM
+  useEffect(() => {
+    const verificarMensagensAgendadas = async () => {
+      const agora = new Date();
+      let houveAtualizacao = false;
+
+      const leadsAtualizados = await Promise.all(
+        leads.map(async (l) => {
+          if (l.mensagem_agendada && l.mensagem_agendada.status === 'Agendada' && l.mensagem_agendada.data_hora_agendada) {
+            const dt = parseDataHoraAgendada(l.mensagem_agendada.data_hora_agendada);
+            // Se o horário agendado chegou (ou já passou do horário estipulado)
+            if (dt && agora.getTime() >= dt.getTime()) {
+              houveAtualizacao = true;
+              if (l.mensagem_agendada.telefone && l.mensagem_agendada.mensagem) {
+                try {
+                  await enviarMensagemWhatsApp(
+                    'Lead',
+                    l.nome,
+                    l.mensagem_agendada.telefone,
+                    'Lembrete Prazo',
+                    l.mensagem_agendada.mensagem,
+                    l.id
+                  );
+                } catch {}
+              }
+              return {
+                ...l,
+                mensagem_agendada: {
+                  ...l.mensagem_agendada,
+                  status: 'Enviada' as const,
+                  data_hora_agendada: `${l.mensagem_agendada.data_hora_agendada} (Disparada às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`
+                }
+              };
+            }
+          }
+          return l;
+        })
+      );
+
+      if (houveAtualizacao) {
+        saveLeads(leadsAtualizados);
+      }
+    };
+
+    const interval = setInterval(verificarMensagensAgendadas, 15000);
+    return () => clearInterval(interval);
+  }, [leads]);
 
   const saveTarefas = (newTarefas: Tarefa[]) => {
     setTarefas(newTarefas);
@@ -664,6 +724,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const saveHistoricoAjustes = (newHist: HistoricoAjusteSaldo[]) => {
     setHistoricoAjustesSaldo(newHist);
     try { localStorage.setItem('gestup_v2_historico_ajustes_saldo', JSON.stringify(newHist)); } catch {}
+  };
+
+  const saveLeads = (newLeads: CRMLead[]) => {
+    setLeads(newLeads);
+    try { localStorage.setItem('gestup_v2_leads', JSON.stringify(newLeads)); } catch {}
   };
 
   const deleteContaPagar = (id: string) => {
@@ -721,6 +786,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setContasReceber([]);
     setContasBancarias(initialContasBancarias);
     setHistoricoAjustesSaldo([]);
+    setLeads(initialLeads);
     try {
       localStorage.setItem('gestup_v2_honorarios', JSON.stringify(initialHonorarios));
       localStorage.setItem('gestup_v2_contas_pagar', JSON.stringify([]));
@@ -742,6 +808,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setHonorarios(initialHonorarios);
     setContasBancarias(initialContasBancarias);
     setHistoricoAjustesSaldo([]);
+    setLeads(initialLeads);
   };
 
   // ================= TAREFAS =================
@@ -1721,11 +1788,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: `lead-${Date.now()}`,
       data_entrada: new Date().toISOString().split('T')[0]
     };
-    setLeads([novo, ...leads]);
+    saveLeads([novo, ...leads]);
   };
 
   const updateLead = (id: string, updates: Partial<CRMLead>) => {
-    setLeads(leads.map(l => l.id === id ? { ...l, ...updates } : l));
+    const atualizados = leads.map(l => l.id === id ? { ...l, ...updates } : l);
+    saveLeads(atualizados);
   };
 
   const converterLeadEmCliente = (leadId: string) => {
@@ -1752,7 +1820,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const baixarLeadComJustificativa = (leadId: string, motivo: string, justificativa: string) => {
-    setLeads(prev => prev.map(l => {
+    const atualizados = leads.map(l => {
       if (l.id === leadId) {
         return {
           ...l,
@@ -1764,11 +1832,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       }
       return l;
-    }));
+    });
+    saveLeads(atualizados);
   };
 
   const reativarLead = (leadId: string) => {
-    setLeads(prev => prev.map(l => {
+    const atualizados = leads.map(l => {
       if (l.id === leadId) {
         return {
           ...l,
@@ -1777,7 +1846,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       }
       return l;
-    }));
+    });
+    saveLeads(atualizados);
   };
 
   // ================= RADAR FISCAL & CAPTAÇÃO ATIVA =================
@@ -1808,9 +1878,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const regimeClassificado = classificarRegimeEmpresa(emp);
     const cleanCnpj = (emp.cnpj || '').replace(/\D/g, '');
-    const leadExistente = leads.find(l => (l.cpf_cnpj || '').replace(/\D/g, '') === cleanCnpj);
-    
-    const idLead = leadExistente ? leadExistente.id : `lead-${Date.now()}`;
     const possuiDebitosGerais = Boolean(
       emp.tem_ade_ativo || 
       (emp.tem_divida_pgfn && (emp.valor_divida_pgfn || 0) > 0) || 
@@ -1847,45 +1914,72 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       possui_debito: possuiDebitosGerais
     };
 
-    if (leadExistente) {
-      setLeads(prev => prev.map(l => l.id === leadExistente.id ? {
-        ...l,
-        estagio: estagio || l.estagio,
-        mensagem_agendada: mensagemAgendada || l.mensagem_agendada,
-        dados_fiscais: {
-          ...l.dados_fiscais,
-          ...dadosFiscaisCompletos
-        }
-      } : l));
-    } else {
-      const novoLead: CRMLead = {
-        id: idLead,
-        nome: emp.socio_principal || emp.razao_social,
-        empresa: emp.razao_social,
-        cpf_cnpj: emp.cnpj,
-        telefone: emp.telefone || emp.whatsapp || '',
-        whatsapp: emp.whatsapp || emp.telefone || '',
-        email: emp.email || '',
-        origem: 'Outbound',
-        servico_interesse: emp.tem_ade_ativo 
-          ? 'Regularização ADE / Simples Nacional' 
-          : (emp.tem_divida_pgfn ? 'Transação Tributária PGFN' : 'Assessoria Contábil & Fiscal'),
-        estagio: estagio,
-        prioridade: emp.tem_ade_ativo ? 'Urgente' : (emp.valor_divida_pgfn > 50000 ? 'Alta' : 'Normal'),
-        valor_estimado: emp.honorario_regularizacao_estimado || (regimeClassificado === 'MEI' ? 450 : 1500),
-        responsavel: 'Luiz Finup',
-        data_entrada: new Date().toISOString().split('T')[0],
-        observacoes: `Captação Ativa via Radar Fiscal GestUp.\nRegime: ${regimeClassificado}.\nADE Ativo: ${emp.tem_ade_ativo ? `SIM (Prazo: ${emp.prazo_regularizacao_dias || 30} dias)` : 'Não'}.\nDívida PGFN: R$ ${(emp.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${emp.tipo_divida_pgfn || 'N/A'}).\nSegmento: ${emp.segmento || emp.cnae_principal_descricao || 'Geral'}.`,
-        radar_empresa_id: emp.id,
-        mensagem_agendada: mensagemAgendada,
-        dados_fiscais: dadosFiscaisCompletos
-      };
-      setLeads(prev => [novoLead, ...prev]);
-    }
+    let targetLeadId = '';
+
+    // Utiliza estado síncrono e persiste no localStorage
+    setLeads(prevLeads => {
+      const idx = prevLeads.findIndex(l => 
+        (l.radar_empresa_id && l.radar_empresa_id === empresaId) ||
+        (cleanCnpj && (l.cpf_cnpj || '').replace(/\D/g, '') === cleanCnpj) ||
+        (l.empresa && emp.razao_social && l.empresa.trim().toLowerCase() === emp.razao_social.trim().toLowerCase())
+      );
+
+      let updatedList: CRMLead[];
+
+      if (idx >= 0) {
+        targetLeadId = prevLeads[idx].id;
+        updatedList = prevLeads.map((l, i) => i === idx ? {
+          ...l,
+          empresa: emp.razao_social,
+          nome: emp.socio_principal || l.nome || emp.razao_social,
+          cpf_cnpj: emp.cnpj || l.cpf_cnpj,
+          telefone: (mensagemAgendada?.telefone || emp.whatsapp || emp.telefone || l.telefone),
+          whatsapp: (mensagemAgendada?.telefone || emp.whatsapp || emp.telefone || l.whatsapp),
+          estagio: 'Contato Realizado',
+          radar_empresa_id: empresaId,
+          mensagem_agendada: mensagemAgendada || l.mensagem_agendada,
+          dados_fiscais: {
+            ...l.dados_fiscais,
+            ...dadosFiscaisCompletos
+          }
+        } : l);
+      } else {
+        targetLeadId = `lead-${Date.now()}`;
+        const novoLead: CRMLead = {
+          id: targetLeadId,
+          nome: emp.socio_principal || emp.razao_social,
+          empresa: emp.razao_social,
+          cpf_cnpj: emp.cnpj,
+          telefone: mensagemAgendada?.telefone || emp.telefone || emp.whatsapp || '',
+          whatsapp: mensagemAgendada?.telefone || emp.whatsapp || emp.telefone || '',
+          email: emp.email || '',
+          origem: 'Outbound',
+          servico_interesse: emp.tem_ade_ativo 
+            ? 'Regularização ADE / Simples Nacional' 
+            : (emp.tem_divida_pgfn ? 'Transação Tributária PGFN' : 'Assessoria Contábil & Fiscal'),
+          estagio: 'Contato Realizado',
+          prioridade: emp.tem_ade_ativo ? 'Urgente' : (emp.valor_divida_pgfn > 50000 ? 'Alta' : 'Normal'),
+          valor_estimado: emp.honorario_regularizacao_estimado || (regimeClassificado === 'MEI' ? 450 : 1500),
+          responsavel: 'Luiz Finup',
+          data_entrada: new Date().toISOString().split('T')[0],
+          observacoes: `Captação Ativa via Radar Fiscal GestUp.\nRegime: ${regimeClassificado}.\nADE Ativo: ${emp.tem_ade_ativo ? `SIM (Prazo: ${emp.prazo_regularizacao_dias || 30} dias)` : 'Não'}.\nDívida PGFN: R$ ${(emp.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${emp.tipo_divida_pgfn || 'N/A'}).\nSegmento: ${emp.segmento || emp.cnae_principal_descricao || 'Geral'}.`,
+          radar_empresa_id: emp.id,
+          mensagem_agendada: mensagemAgendada,
+          dados_fiscais: dadosFiscaisCompletos
+        };
+        updatedList = [novoLead, ...prevLeads];
+      }
+
+      try {
+        localStorage.setItem('gestup_v2_leads', JSON.stringify(updatedList));
+      } catch {}
+
+      return updatedList;
+    });
 
     atualizarEmpresaRadar(empresaId, {
       status_contato: mensagemAgendada ? 'Contatado_WhatsApp' : 'Importado_CRM',
-      lead_crm_id: idLead,
+      lead_crm_id: targetLeadId || empresaId,
       data_importacao_crm: new Date().toLocaleString('pt-BR'),
       mensagens_enviadas_count: mensagemAgendada ? (emp.mensagens_enviadas_count || 0) + 1 : emp.mensagens_enviadas_count,
       ultima_mensagem_data: mensagemAgendada ? new Date().toLocaleString('pt-BR') : emp.ultima_mensagem_data

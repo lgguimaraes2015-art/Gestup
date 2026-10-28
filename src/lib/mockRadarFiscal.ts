@@ -19,6 +19,30 @@ export function classificarRegimeEmpresa(empresa: {
   return 'Regime Normal';
 }
 
+/**
+ * Converte strings de agendamento ("2026-10-28 às 07:00" ou "28/10/2026 às 07:00") em objeto Date
+ */
+export function parseDataHoraAgendada(str?: string): Date | null {
+  if (!str) return null;
+  try {
+    const cleaned = str.replace(' às ', ' ').replace(' as ', ' ').trim();
+    if (cleaned.includes('/')) {
+      const [dPart, tPart] = cleaned.split(' ');
+      const [dia, mes, ano] = dPart.split('/').map(Number);
+      const [hora, min] = (tPart || '00:00').split(':').map(Number);
+      const dt = new Date(ano, mes - 1, dia, hora || 0, min || 0);
+      return isNaN(dt.getTime()) ? null : dt;
+    } else if (cleaned.includes('-')) {
+      const [dPart, tPart] = cleaned.split(' ');
+      const [ano, mes, dia] = dPart.split('-').map(Number);
+      const [hora, min] = (tPart || '00:00').split(':').map(Number);
+      const dt = new Date(ano, mes - 1, dia, hora || 0, min || 0);
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+  } catch {}
+  return null;
+}
+
 export const initialModelosCaptação: ModeloMensagemCaptação[] = [
   {
     id: 'mod-ade-urgente',

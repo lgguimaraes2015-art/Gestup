@@ -26,6 +26,7 @@ import {
   TrendingUp,
   Filter,
   ArrowUpRight,
+  ArrowRight,
   Sparkles,
   Clock,
   ExternalLink,
@@ -389,7 +390,7 @@ export function RadarFiscalView() {
     setTimeout(() => {
       setModalWhatsAppOpen(false);
       setStatusEnvioFeedback(null);
-    }, 2200);
+    }, 3500);
   };
 
   // Copiar mensagem
@@ -1338,9 +1339,23 @@ export function RadarFiscalView() {
               </div>
 
               {statusEnvioFeedback && (
-                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-2xl text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2 animate-in fade-in">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span className="font-semibold">{statusEnvioFeedback}</span>
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-2xl text-xs text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span className="font-semibold">{statusEnvioFeedback}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalWhatsAppOpen(false);
+                      setStatusEnvioFeedback(null);
+                      setActiveTab('crm');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-[11px] transition shadow-xs self-end sm:self-auto flex-shrink-0"
+                  >
+                    <span>Ver no CRM</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
             </div>

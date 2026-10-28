@@ -5,7 +5,8 @@ import { useApp } from '@/context/AppContext';
 import {
   EmpresaRadarFiscal,
   FiltrosRadarFiscal,
-  ModeloMensagemCaptação
+  ModeloMensagemCaptação,
+  MensagemAgendadaWhatsApp
 } from '@/types';
 import { classificarRegimeEmpresa } from '@/lib/mockRadarFiscal';
 import {
@@ -38,7 +39,11 @@ import {
   Flame,
   Briefcase,
   Play,
-  RotateCcw
+  RotateCcw,
+  Calendar,
+  Tag,
+  Eye,
+  Edit3
 } from 'lucide-react';
 
 export function RadarFiscalView() {
@@ -89,6 +94,14 @@ export function RadarFiscalView() {
   const [enviandoWhatsApp, setEnviandoWhatsApp] = useState(false);
   const [statusEnvioFeedback, setStatusEnvioFeedback] = useState<string | null>(null);
   const [copiadoFeedback, setCopiadoFeedback] = useState(false);
+  const [tipoEnvioWhatsApp, setTipoEnvioWhatsApp] = useState<'imediato' | 'agendado'>('imediato');
+  const [dataAgendada, setDataAgendada] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [horaAgendada, setHoraAgendada] = useState<string>('09:00');
+  const [abaVisualizacaoWhatsApp, setAbaVisualizacaoWhatsApp] = useState<'editor' | 'preview'>('editor');
 
   // Modal de Dossiê Fiscal
   const [modalDossieOpen, setModalDossieOpen] = useState(false);
@@ -241,19 +254,54 @@ export function RadarFiscalView() {
 
   // Preparar mensagem do WhatsApp com variáveis substituídas
   const montarMensagemComVariaveis = (emp: EmpresaRadarFiscal, templateTexto: string): string => {
+    if (!templateTexto) return '';
     const socioNome = emp.socio_principal ? emp.socio_principal.split(' ')[0] : 'Empreendedor(a)';
     const debitoFormatado = (emp.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
     const diasAde = emp.prazo_regularizacao_dias ? String(emp.prazo_regularizacao_dias) : '30';
+    const regimeClassificado = classificarRegimeEmpresa(emp);
 
     return templateTexto
       .replace(/{socio}/g, socioNome)
       .replace(/{empresa}/g, emp.nome_fantasia || emp.razao_social)
       .replace(/{cnpj}/g, emp.cnpj)
       .replace(/{cidade}/g, emp.municipio)
-      .replace(/{valor_debito}/g, debitoFormatado)
+      .replace(/{regime}/g, regimeClassificado)
+      .replace(/{valor_debito}/g, `R$ ${debitoFormatado}`)
       .replace(/{prazo_dias}/g, diasAde)
       .replace(/{tipo_divida}/g, emp.tipo_divida_pgfn || 'Tributária')
-      .replace(/{segmento}/g, emp.segmento || 'empresarial');
+      .replace(/{segmento}/g, emp.segmento || emp.cnae_principal_descricao || 'empresarial')
+      .replace(/{cnae}/g, emp.cnae_principal_descricao || emp.segmento || 'empresarial');
+  };
+
+  // Sugerir texto padrão inteligentemente com base no diagnóstico da empresa
+  const handleSugerirTextoPadrao = () => {
+    if (!empresaAlvoWhatsApp) return;
+    const regimeClassificado = classificarRegimeEmpresa(empresaAlvoWhatsApp);
+    let modPadraoId = 'mod-ade-urgente';
+
+    if (regimeClassificado === 'MEI') {
+      modPadraoId = 'mod-mei-das';
+    } else if (empresaAlvoWhatsApp.tem_ade_ativo) {
+      modPadraoId = 'mod-ade-urgente';
+    } else if (empresaAlvoWhatsApp.tem_divida_pgfn) {
+      modPadraoId = 'mod-pgfn-transacao';
+    } else {
+      modPadraoId = 'mod-preventivo-blindagem';
+    }
+
+    setModeloSelecionadoId(modPadraoId);
+    const modelo = modelosCaptação.find(m => m.id === modPadraoId) || modelosCaptação[0];
+    if (modelo) {
+      setMensagemEditavel(modelo.texto);
+    }
+  };
+
+  // Inserir TAG personalizada no texto da mensagem
+  const handleInserirTag = (tag: string) => {
+    setMensagemEditavel(prev => {
+      const espaco = prev.length > 0 && !prev.endsWith(' ') && !prev.endsWith('\n') ? ' ' : '';
+      return `${prev}${espaco}${tag}`;
+    });
   };
 
   // Abrir Modal de Disparo WhatsApp
@@ -261,6 +309,8 @@ export function RadarFiscalView() {
     setEmpresaAlvoWhatsApp(emp);
     const tel = emp.whatsapp || emp.telefone || '';
     setTelefoneDestino(tel.replace(/\D/g, ''));
+    setTipoEnvioWhatsApp('imediato');
+    setAbaVisualizacaoWhatsApp('editor');
 
     // Escolhe template padrão conforme regime e risco
     const regimeClassificado = classificarRegimeEmpresa(emp);
@@ -279,7 +329,7 @@ export function RadarFiscalView() {
     setModeloSelecionadoId(modPadraoId);
     const modelo = modelosCaptação.find(m => m.id === modPadraoId) || modelosCaptação[0];
     if (modelo) {
-      setMensagemEditavel(montarMensagemComVariaveis(emp, modelo.texto));
+      setMensagemEditavel(modelo.texto);
     }
     setStatusEnvioFeedback(null);
     setModalWhatsAppOpen(true);
@@ -291,32 +341,55 @@ export function RadarFiscalView() {
     if (!empresaAlvoWhatsApp) return;
     const mod = modelosCaptação.find(m => m.id === modId);
     if (mod) {
-      setMensagemEditavel(montarMensagemComVariaveis(empresaAlvoWhatsApp, mod.texto));
+      setMensagemEditavel(mod.texto);
     }
   };
 
-  // Disparar via API do WhatsApp do GestUp (Evolution API)
-  const handleDispararWhatsAppOficial = async () => {
+  // Executar Envio Imediato ou Programado & Enviar ao CRM
+  const handleExecutarAcaoWhatsApp = async () => {
     if (!empresaAlvoWhatsApp || !telefoneDestino) return;
 
     setEnviandoWhatsApp(true);
     setStatusEnvioFeedback(null);
 
-    const ok = await dispararMensagemCaptaçãoWhatsApp(
-      empresaAlvoWhatsApp.id,
-      mensagemEditavel,
-      telefoneDestino
-    );
+    const mensagemFinal = montarMensagemComVariaveis(empresaAlvoWhatsApp, mensagemEditavel);
+    const isAgendado = tipoEnvioWhatsApp === 'agendado';
+    const dataHoraProgramada = isAgendado
+      ? `${dataAgendada} às ${horaAgendada}`
+      : new Date().toLocaleString('pt-BR');
+
+    const agendamento: MensagemAgendadaWhatsApp = {
+      id: `msg-${Date.now()}`,
+      data_hora_agendada: dataHoraProgramada,
+      telefone: telefoneDestino,
+      mensagem: mensagemFinal,
+      status: isAgendado ? 'Agendada' : 'Enviada',
+      created_at: new Date().toLocaleString('pt-BR')
+    };
+
+    if (!isAgendado) {
+      // Disparo imediato se configurado
+      await dispararMensagemCaptaçãoWhatsApp(
+        empresaAlvoWhatsApp.id,
+        mensagemFinal,
+        telefoneDestino
+      );
+    }
+
+    // Enviar diretamente para o CRM no estágio "Contato Realizado" com dados fiscais completos
+    await importarEmpresaRadarParaCRM(empresaAlvoWhatsApp.id, 'Contato Realizado', agendamento);
 
     setEnviandoWhatsApp(false);
-    if (ok) {
-      setStatusEnvioFeedback('Mensagem enviada com sucesso pela instância oficial do WhatsApp!');
-      setTimeout(() => {
-        setModalWhatsAppOpen(false);
-      }, 1500);
+    if (isAgendado) {
+      setStatusEnvioFeedback(`📅 Mensagem programada com sucesso para ${dataHoraProgramada}! A empresa foi enviada ao CRM em "Contato Realizado".`);
     } else {
-      setStatusEnvioFeedback('Instância remota offline ou erro de envio. Use o botão alternativo de abrir no WhatsApp!');
+      setStatusEnvioFeedback(`🚀 Mensagem enviada e lead cadastrado no CRM em "Contato Realizado"!`);
     }
+
+    setTimeout(() => {
+      setModalWhatsAppOpen(false);
+      setStatusEnvioFeedback(null);
+    }, 2200);
   };
 
   // Copiar mensagem
@@ -1005,33 +1078,117 @@ export function RadarFiscalView() {
       {/* ================= MODAL DE ABORDAGEM WHATSAPP ================= */}
       {modalWhatsAppOpen && empresaAlvoWhatsApp && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 my-8">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 my-8 animate-in fade-in">
+            {/* Topo do Modal */}
             <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-700">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shadow-xs">
                   <Send className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                    Disparar Abordagem Tributária via WhatsApp
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                    Abordagem Comercial & Tributária via WhatsApp
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Empresa: <strong>{empresaAlvoWhatsApp.razao_social}</strong> (CNPJ: {empresaAlvoWhatsApp.cnpj}) - Regime: <strong>{classificarRegimeEmpresa(empresaAlvoWhatsApp)}</strong>
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {empresaAlvoWhatsApp.razao_social}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+                      CNPJ: {empresaAlvoWhatsApp.cnpj}
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      classificarRegimeEmpresa(empresaAlvoWhatsApp) === 'Simples'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : classificarRegimeEmpresa(empresaAlvoWhatsApp) === 'MEI'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                        : 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300'
+                    }`}>
+                      {classificarRegimeEmpresa(empresaAlvoWhatsApp)}
+                    </span>
+                  </div>
                 </div>
               </div>
               <button
                 onClick={() => setModalWhatsAppOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg"
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 my-4">
+            <div className="space-y-4 my-4 text-xs">
+              {/* Seleção do Modo de Envio: Imediato vs Agendado */}
+              <div className="bg-slate-50 dark:bg-slate-900/70 p-3 rounded-2xl border border-slate-200 dark:border-slate-700/80">
+                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-2">
+                  Programação do Disparo:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTipoEnvioWhatsApp('imediato')}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-bold transition text-xs ${
+                      tipoEnvioWhatsApp === 'imediato'
+                        ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Disparar Imediatamente</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTipoEnvioWhatsApp('agendado')}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-bold transition text-xs ${
+                      tipoEnvioWhatsApp === 'agendado'
+                        ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/30'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Programar para Outro Dia / Hora</span>
+                  </button>
+                </div>
+
+                {/* Bloco de Agendamento */}
+                {tipoEnvioWhatsApp === 'agendado' && (
+                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center gap-3 animate-in fade-in">
+                    <div className="flex-1 w-full">
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Data do Disparo:
+                      </label>
+                      <input
+                        type="date"
+                        value={dataAgendada}
+                        onChange={(e) => setDataAgendada(e.target.value)}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="flex-1 w-full">
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Horário Programado:
+                      </label>
+                      <input
+                        type="time"
+                        value={horaAgendada}
+                        onChange={(e) => setHoraAgendada(e.target.value)}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="w-full sm:w-auto self-end pb-1">
+                      <span className="text-[11px] text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 inline-block">
+                        ✓ Entra no CRM em <strong>Contato Realizado</strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Telefone Destino */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Telefone / WhatsApp de Destino (com DDD):
                 </label>
                 <div className="flex items-center gap-2">
@@ -1042,48 +1199,116 @@ export function RadarFiscalView() {
                       value={telefoneDestino}
                       onChange={(e) => setTelefoneDestino(e.target.value)}
                       placeholder="Ex: 19992080639"
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                     />
                   </div>
                   {empresaAlvoWhatsApp.socio_principal && (
-                    <span className="text-xs text-slate-500 hidden sm:inline">
-                      Sócio: {empresaAlvoWhatsApp.socio_principal}
+                    <span className="text-xs text-slate-500 hidden sm:inline bg-slate-100 dark:bg-slate-800 px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                      👤 {empresaAlvoWhatsApp.socio_principal}
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Seletor de Templates Prontos */}
+              {/* Barra de Modelos & Sugerir Texto Padrão */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Modelo de Abordagem Estratégica:
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Modelos de Abordagem Estratégica:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSugerirTextoPadrao}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300/50 dark:border-amber-700/50 rounded-lg text-[11px] font-bold transition"
+                    title="Preenche o melhor texto padrão baseado na situação fiscal da empresa"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Sugerir Texto Padrão</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {modelosCaptação.map((m) => (
                     <button
                       key={m.id}
                       type="button"
                       onClick={() => handleTrocarTemplateWhatsApp(m.id)}
-                      className={`text-left p-2.5 rounded-xl border text-xs transition ${
+                      className={`text-left p-2 rounded-xl border text-[11px] transition ${
                         modeloSelecionadoId === m.id
-                          ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-200 ring-1 ring-emerald-500'
-                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300'
+                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-bold ring-1 ring-emerald-500'
+                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-600 dark:text-slate-400'
                       }`}
                     >
-                      <div className="font-bold">{m.titulo}</div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">{m.descricao}</div>
+                      <div className="truncate">{m.titulo.replace(/^[^\w\s]+/, '').trim()}</div>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Editor da Mensagem */}
+              {/* Botões para Inserção de TAGs Rápidas */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Mensagem Personalizada (Você pode editar antes de enviar):
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1 text-[11px]">
+                    <Tag className="w-3 h-3 text-slate-400" />
+                    <span>Clique para inserir TAG no texto:</span>
                   </label>
+                  <span className="text-[10px] text-slate-400">Preenchimento automático</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    { tag: '{empresa}', label: 'Nome da Empresa' },
+                    { tag: '{socio}', label: 'Nome do Sócio' },
+                    { tag: '{cnpj}', label: 'CNPJ' },
+                    { tag: '{cidade}', label: 'Cidade' },
+                    { tag: '{regime}', label: 'Regime' },
+                    { tag: '{valor_debito}', label: 'Valor Débito' },
+                    { tag: '{prazo_dias}', label: 'Prazo Dias' },
+                    { tag: '{cnae}', label: 'Ramo / CNAE' }
+                  ].map(item => (
+                    <button
+                      key={item.tag}
+                      type="button"
+                      onClick={() => handleInserirTag(item.tag)}
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-md font-mono text-[10px] border border-slate-200 dark:border-slate-600 transition"
+                      title={`Inserir ${item.label} (${item.tag})`}
+                    >
+                      + {item.tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Abas Editor vs Pré-visualização Real */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setAbaVisualizacaoWhatsApp('editor')}
+                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                        abaVisualizacaoWhatsApp === 'editor'
+                          ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>Mensagem Padrão</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAbaVisualizacaoWhatsApp('preview')}
+                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                        abaVisualizacaoWhatsApp === 'preview'
+                          ? 'bg-emerald-500 text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>Pré-visualização Real</span>
+                    </button>
+                  </div>
+
                   <button
+                    type="button"
                     onClick={handleCopiarMensagem}
                     className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                   >
@@ -1091,18 +1316,31 @@ export function RadarFiscalView() {
                     {copiadoFeedback ? 'Copiado!' : 'Copiar Texto'}
                   </button>
                 </div>
-                <textarea
-                  rows={8}
-                  value={mensagemEditavel}
-                  onChange={(e) => setMensagemEditavel(e.target.value)}
-                  className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed font-sans"
-                />
+
+                {abaVisualizacaoWhatsApp === 'editor' ? (
+                  <textarea
+                    rows={7}
+                    value={mensagemEditavel}
+                    onChange={(e) => setMensagemEditavel(e.target.value)}
+                    placeholder="Digite a mensagem padrão ou use as TAGs como {empresa}, {socio}, {cnpj}..."
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed font-sans"
+                  />
+                ) : (
+                  <div className="bg-[#EFEAE2] dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 min-h-[160px] flex flex-col justify-end">
+                    <div className="bg-white dark:bg-emerald-950/70 border border-emerald-200/50 dark:border-emerald-800/40 p-3.5 rounded-2xl rounded-tl-xs shadow-xs text-xs sm:text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap leading-relaxed max-w-[90%]">
+                      {montarMensagemComVariaveis(empresaAlvoWhatsApp, mensagemEditavel)}
+                      <div className="text-[10px] text-slate-400 text-right mt-2 font-mono">
+                        {tipoEnvioWhatsApp === 'agendado' ? `Programado para ${dataAgendada} ${horaAgendada}` : 'Agora'} ✓✓
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {statusEnvioFeedback && (
-                <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 rounded-xl text-xs text-blue-800 dark:text-blue-200 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                  <span>{statusEnvioFeedback}</span>
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-2xl text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span className="font-semibold">{statusEnvioFeedback}</span>
                 </div>
               )}
             </div>
@@ -1113,10 +1351,10 @@ export function RadarFiscalView() {
                 href={gerarLinkWaMe()}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl text-xs font-semibold transition"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl text-xs font-semibold transition"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                Abrir no WhatsApp Web / App
+                <span>Abrir WhatsApp Web</span>
               </a>
 
               <div className="flex items-center gap-2">
@@ -1130,19 +1368,28 @@ export function RadarFiscalView() {
 
                 <button
                   type="button"
-                  onClick={handleDispararWhatsAppOficial}
+                  onClick={handleExecutarAcaoWhatsApp}
                   disabled={enviandoWhatsApp || !telefoneDestino}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-emerald-900/20 transition"
+                  className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition ${
+                    tipoEnvioWhatsApp === 'agendado'
+                      ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20'
+                      : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20'
+                  }`}
                 >
                   {enviandoWhatsApp ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      Disparando...
+                      <span>Processando...</span>
+                    </>
+                  ) : tipoEnvioWhatsApp === 'agendado' ? (
+                    <>
+                      <Calendar className="w-4 h-4" />
+                      <span>Programar & Enviar ao CRM</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      Disparar pelo GestUp (Evolution API)
+                      <span>Disparar & Enviar ao CRM</span>
                     </>
                   )}
                 </button>

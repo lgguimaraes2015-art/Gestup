@@ -342,7 +342,16 @@ export interface MovimentacaoFuncionario {
 
 // ==================== MÓDULO CRM ====================
 
-export type CRMLeadEstagio = 'Novo Lead' | 'Qualificação' | 'Diagnóstico' | 'Proposta Enviada' | 'Negociação' | 'Fechado' | 'Perdido' | string;
+export type CRMLeadEstagio = 'Novo Lead' | 'Contato Realizado' | 'Qualificação' | 'Diagnóstico' | 'Proposta Enviada' | 'Negociação' | 'Fechado' | 'Perdido' | string;
+
+export interface MensagemAgendadaWhatsApp {
+  id: string;
+  data_hora_agendada: string;
+  telefone: string;
+  mensagem: string;
+  status: 'Agendada' | 'Enviada' | 'Cancelada';
+  created_at: string;
+}
 
 export interface CRMLead {
   id: string;
@@ -364,7 +373,13 @@ export interface CRMLead {
   data_entrada: string;
   convertido_cliente_id?: string;
   radar_empresa_id?: string;
+  mensagem_agendada?: MensagemAgendadaWhatsApp;
+  justificativa_baixa?: string;
+  motivo_baixa?: string;
+  data_baixa?: string;
   dados_fiscais?: {
+    razao_social?: string;
+    nome_fantasia?: string;
     regime: string;
     optante_simples: boolean;
     optante_mei: boolean;
@@ -378,6 +393,11 @@ export interface CRMLead {
     uf?: string;
     municipio?: string;
     endereco_completo?: string;
+    cnae_codigo?: string;
+    cnae_descricao?: string;
+    segmento?: string;
+    socios?: { nome: string; qualificacao: string }[];
+    possui_debito?: boolean;
   };
 }
 

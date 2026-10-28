@@ -8,6 +8,8 @@ import {
   StatusTarefa,
   Declaracao,
   CRMLead,
+  CRMLeadEstagio,
+  MensagemAgendadaWhatsApp,
   CRMProcedimento,
   CRMProcedimentoTemplate,
   WhatsAppConfig,
@@ -47,7 +49,8 @@ import {
 } from '@/lib/mockData';
 import {
   initialModelosCaptação,
-  initialEmpresasRadar
+  initialEmpresasRadar,
+  classificarRegimeEmpresa
 } from '@/lib/mockRadarFiscal';
 
 interface AppContextType {
@@ -203,13 +206,15 @@ interface AppContextType {
   addLead: (lead: Omit<CRMLead, 'id' | 'data_entrada'>) => void;
   updateLead: (id: string, updates: Partial<CRMLead>) => void;
   converterLeadEmCliente: (leadId: string) => void;
+  baixarLeadComJustificativa: (leadId: string, motivo: string, justificativa: string) => void;
+  reativarLead: (leadId: string) => void;
 
   // Radar Fiscal & Captação Ativa Receita Federal / PGFN
   empresasRadar: EmpresaRadarFiscal[];
   modelosCaptação: ModeloMensagemCaptação[];
   adicionarEmpresaAoRadar: (empresa: EmpresaRadarFiscal) => void;
   atualizarEmpresaRadar: (id: string, updates: Partial<EmpresaRadarFiscal>) => void;
-  importarEmpresaRadarParaCRM: (empresaId: string, estagio?: CRMLead['estagio']) => Promise<boolean>;
+  importarEmpresaRadarParaCRM: (empresaId: string, estagio?: CRMLeadEstagio, mensagemAgendada?: MensagemAgendadaWhatsApp) => Promise<boolean>;
   importarEmpresasRadarLoteParaCRM: (empresaIds: string[]) => Promise<number>;
   consultarCNPJOnline: (cnpj: string) => Promise<{ success: boolean; empresa?: EmpresaRadarFiscal; error?: string }>;
   dispararMensagemCaptaçãoWhatsApp: (empresaId: string, mensagemTexto: string, telefoneDestino: string) => Promise<boolean>;
@@ -1746,6 +1751,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateLead(leadId, { estagio: 'Fechado' });
   };
 
+  const baixarLeadComJustificativa = (leadId: string, motivo: string, justificativa: string) => {
+    setLeads(prev => prev.map(l => {
+      if (l.id === leadId) {
+        return {
+          ...l,
+          estagio: 'Perdido',
+          motivo_baixa: motivo,
+          justificativa_baixa: justificativa,
+          data_baixa: new Date().toLocaleString('pt-BR'),
+          observacoes: `${l.observacoes || ''}\n[BAIXA/PERDIDO em ${new Date().toLocaleString('pt-BR')}] Motivo: ${motivo}. Justificativa: ${justificativa}`.trim()
+        };
+      }
+      return l;
+    }));
+  };
+
+  const reativarLead = (leadId: string) => {
+    setLeads(prev => prev.map(l => {
+      if (l.id === leadId) {
+        return {
+          ...l,
+          estagio: 'Contato Realizado',
+          observacoes: `${l.observacoes || ''}\n[REATIVADO em ${new Date().toLocaleString('pt-BR')}] Lead reativado no funil comercial.`.trim()
+        };
+      }
+      return l;
+    }));
+  };
+
   // ================= RADAR FISCAL & CAPTAÇÃO ATIVA =================
   const adicionarEmpresaAoRadar = (novaEmpresa: EmpresaRadarFiscal) => {
     const cleanCnpj = (novaEmpresa.cnpj || '').replace(/\D/g, '');
@@ -1764,16 +1798,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saveEmpresasRadar(atualizadas);
   };
 
-  const importarEmpresaRadarParaCRM = async (empresaId: string, estagio: CRMLead['estagio'] = 'Contato'): Promise<boolean> => {
+  const importarEmpresaRadarParaCRM = async (
+    empresaId: string, 
+    estagio: CRMLeadEstagio = 'Contato Realizado',
+    mensagemAgendada?: MensagemAgendadaWhatsApp
+  ): Promise<boolean> => {
     const emp = empresasRadar.find(e => e.id === empresaId);
     if (!emp) return false;
 
+    const regimeClassificado = classificarRegimeEmpresa(emp);
     const cleanCnpj = (emp.cnpj || '').replace(/\D/g, '');
     const leadExistente = leads.find(l => (l.cpf_cnpj || '').replace(/\D/g, '') === cleanCnpj);
     
     const idLead = leadExistente ? leadExistente.id : `lead-${Date.now()}`;
-    
-    if (!leadExistente) {
+    const possuiDebitosGerais = Boolean(
+      emp.tem_ade_ativo || 
+      (emp.tem_divida_pgfn && (emp.valor_divida_pgfn || 0) > 0) || 
+      (emp.tem_divida_estadual && (emp.valor_divida_estadual || 0) > 0)
+    );
+
+    const enderecoFormatado = [
+      emp.logradouro ? `${emp.logradouro}, ${emp.numero || 'S/N'}${emp.complemento ? ' - ' + emp.complemento : ''}` : '',
+      emp.bairro ? emp.bairro : '',
+      emp.municipio && emp.uf ? `${emp.municipio}/${emp.uf}` : '',
+      emp.cep ? `CEP: ${emp.cep}` : ''
+    ].filter(Boolean).join(' - ') || `${emp.municipio || ''}/${emp.uf || ''}`;
+
+    const dadosFiscaisCompletos = {
+      razao_social: emp.razao_social,
+      nome_fantasia: emp.nome_fantasia || emp.razao_social,
+      regime: regimeClassificado,
+      optante_simples: emp.optante_simples,
+      optante_mei: emp.optante_mei,
+      tem_ade_ativo: emp.tem_ade_ativo,
+      prazo_regularizacao_dias: emp.prazo_regularizacao_dias,
+      tem_divida_pgfn: emp.tem_divida_pgfn,
+      valor_divida_pgfn: emp.valor_divida_pgfn,
+      tipo_divida_pgfn: emp.tipo_divida_pgfn,
+      tem_divida_estadual: emp.tem_divida_estadual,
+      valor_divida_estadual: emp.valor_divida_estadual,
+      uf: emp.uf,
+      municipio: emp.municipio,
+      endereco_completo: enderecoFormatado,
+      cnae_codigo: emp.cnae_principal_codigo,
+      cnae_descricao: emp.cnae_principal_descricao,
+      segmento: emp.segmento || emp.cnae_principal_descricao || 'Atividade Geral',
+      socios: emp.socios && emp.socios.length > 0 ? emp.socios : (emp.socio_principal ? [{ nome: emp.socio_principal, qualificacao: 'Sócio-Administrador' }] : []),
+      possui_debito: possuiDebitosGerais
+    };
+
+    if (leadExistente) {
+      setLeads(prev => prev.map(l => l.id === leadExistente.id ? {
+        ...l,
+        estagio: estagio || l.estagio,
+        mensagem_agendada: mensagemAgendada || l.mensagem_agendada,
+        dados_fiscais: {
+          ...l.dados_fiscais,
+          ...dadosFiscaisCompletos
+        }
+      } : l));
+    } else {
       const novoLead: CRMLead = {
         id: idLead,
         nome: emp.socio_principal || emp.razao_social,
@@ -1788,34 +1872,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           : (emp.tem_divida_pgfn ? 'Transação Tributária PGFN' : 'Assessoria Contábil & Fiscal'),
         estagio: estagio,
         prioridade: emp.tem_ade_ativo ? 'Urgente' : (emp.valor_divida_pgfn > 50000 ? 'Alta' : 'Normal'),
-        valor_estimado: emp.honorario_regularizacao_estimado || (emp.regime === 'MEI' ? 450 : 1500),
+        valor_estimado: emp.honorario_regularizacao_estimado || (regimeClassificado === 'MEI' ? 450 : 1500),
         responsavel: 'Luiz Finup',
         data_entrada: new Date().toISOString().split('T')[0],
-        observacoes: `Captação Ativa via Radar Fiscal GestUp.\nRegime: ${emp.regime}.\nADE Ativo: ${emp.tem_ade_ativo ? `SIM (Prazo: ${emp.prazo_regularizacao_dias || 30} dias)` : 'Não'}.\nDívida PGFN: R$ ${(emp.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${emp.tipo_divida_pgfn || 'N/A'}).\nSegmento: ${emp.segmento || emp.cnae_principal_descricao || 'Geral'}.`,
+        observacoes: `Captação Ativa via Radar Fiscal GestUp.\nRegime: ${regimeClassificado}.\nADE Ativo: ${emp.tem_ade_ativo ? `SIM (Prazo: ${emp.prazo_regularizacao_dias || 30} dias)` : 'Não'}.\nDívida PGFN: R$ ${(emp.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${emp.tipo_divida_pgfn || 'N/A'}).\nSegmento: ${emp.segmento || emp.cnae_principal_descricao || 'Geral'}.`,
         radar_empresa_id: emp.id,
-        dados_fiscais: {
-          regime: emp.regime,
-          optante_simples: emp.optante_simples,
-          optante_mei: emp.optante_mei,
-          tem_ade_ativo: emp.tem_ade_ativo,
-          prazo_regularizacao_dias: emp.prazo_regularizacao_dias,
-          tem_divida_pgfn: emp.tem_divida_pgfn,
-          valor_divida_pgfn: emp.valor_divida_pgfn,
-          tipo_divida_pgfn: emp.tipo_divida_pgfn,
-          tem_divida_estadual: emp.tem_divida_estadual,
-          valor_divida_estadual: emp.valor_divida_estadual,
-          uf: emp.uf,
-          municipio: emp.municipio,
-          endereco_completo: `${emp.logradouro || ''}, ${emp.numero || 'S/N'} - ${emp.bairro || ''}, ${emp.municipio}/${emp.uf}`
-        }
+        mensagem_agendada: mensagemAgendada,
+        dados_fiscais: dadosFiscaisCompletos
       };
       setLeads(prev => [novoLead, ...prev]);
     }
 
     atualizarEmpresaRadar(empresaId, {
-      status_contato: 'Importado_CRM',
+      status_contato: mensagemAgendada ? 'Contatado_WhatsApp' : 'Importado_CRM',
       lead_crm_id: idLead,
-      data_importacao_crm: new Date().toLocaleString('pt-BR')
+      data_importacao_crm: new Date().toLocaleString('pt-BR'),
+      mensagens_enviadas_count: mensagemAgendada ? (emp.mensagens_enviadas_count || 0) + 1 : emp.mensagens_enviadas_count,
+      ultima_mensagem_data: mensagemAgendada ? new Date().toLocaleString('pt-BR') : emp.ultima_mensagem_data
     });
 
     return true;
@@ -2206,6 +2279,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addLead,
         updateLead,
         converterLeadEmCliente,
+        baixarLeadComJustificativa,
+        reativarLead,
         empresasRadar,
         modelosCaptação,
         adicionarEmpresaAoRadar,

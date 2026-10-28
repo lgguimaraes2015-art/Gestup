@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
-import { CRMLead, CRMLeadEstagio } from '@/types';
+import { CRMLead, CRMLeadEstagio, MensagemAgendadaWhatsApp } from '@/types';
 import {
   TrendingUp,
   DollarSign,
@@ -21,7 +21,15 @@ import {
   RotateCcw,
   Archive,
   UserX,
-  FileText
+  FileText,
+  ExternalLink,
+  Send,
+  Copy,
+  Check,
+  Edit3,
+  Eye,
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 
 interface CRMLeadsViewProps {
@@ -72,6 +80,18 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
   const [motivoBaixa, setMotivoBaixa] = useState('Sem interesse no momento');
   const [justificativaBaixa, setJustificativaBaixa] = useState('');
 
+  // Modal de Visualização e Edição de Mensagem WhatsApp
+  const [modalMensagemOpen, setModalMensagemOpen] = useState(false);
+  const [leadMensagemAtivo, setLeadMensagemAtivo] = useState<CRMLead | null>(null);
+  const [textoMensagemEditavel, setTextoMensagemEditavel] = useState('');
+  const [telefoneDestinoMensagem, setTelefoneDestinoMensagem] = useState('');
+  const [dataHoraAgendamento, setDataHoraAgendamento] = useState('');
+  const [statusAgendamento, setStatusAgendamento] = useState<'Agendada' | 'Enviada' | 'Cancelada'>('Agendada');
+  const [abaVisualizacaoModal, setAbaVisualizacaoModal] = useState<'editor' | 'preview'>('editor');
+  const [feedbackMensagem, setFeedbackMensagem] = useState<string | null>(null);
+  const [enviandoMensagem, setEnviandoMensagem] = useState(false);
+  const [copiadoFeedback, setCopiadoFeedback] = useState(false);
+
   const leadsAtivos = leads.filter(l => l.estagio !== 'Perdido');
   const leadsBaixados = leads.filter(l => l.estagio === 'Perdido');
 
@@ -82,6 +102,155 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
   const valorFechado = leadsAtivos
     .filter(l => l.estagio === 'Fechado')
     .reduce((acc, l) => acc + (l.valor_estimado || 0), 0);
+
+  // Gerador de mensagem padrão de abordagem se não houver mensagem agendada prévia
+  const gerarMensagemPadraoLead = (lead: CRMLead): string => {
+    const primeiroNome = lead.nome ? lead.nome.split(' ')[0] : 'Empreendedor(a)';
+    const nomeEmpresa = lead.empresa || lead.nome;
+
+    if (lead.dados_fiscais?.tem_ade_ativo) {
+      return `Olá, ${primeiroNome}! Tudo bem? Sou Luiz da fin.up contabilidade.\n\nIdentificamos que a empresa ${nomeEmpresa} possui notificação de ADE na Receita Federal com prazo de regularização de aproximadamente ${lead.dados_fiscais.prazo_regularizacao_dias || 30} dias para evitar a exclusão do Simples Nacional.\n\nPoderíamos agendar um alinhamento rápido para te apresentar um plano de regularização e parcelamento especial?`;
+    }
+
+    if (lead.dados_fiscais?.tem_divida_pgfn && (lead.dados_fiscais.valor_divida_pgfn || 0) > 0) {
+      const valorFormatado = (lead.dados_fiscais.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+      return `Olá, ${primeiroNome}! Sou Luiz da equipe de Gestão Tributária da fin.up.\n\nConstatamos inscrições de Dívida Ativa da União (PGFN) no valor aproximado de R$ ${valorFormatado} vinculadas ao CNPJ da ${nomeEmpresa}.\n\nEstão abertos editais com até 70% de desconto em juros e multas para transação tributária. Gostaria de uma simulação gratuita?`;
+    }
+
+    return `Olá, ${primeiroNome}! Tudo bem? Sou Luiz da fin.up.\n\nGostaria de saber como podemos avançar na proposta de ${lead.servico_interesse || 'Assessoria Contábil & Financeira'} para a ${nomeEmpresa}!\n\nPodemos conversar hoje para tirar qualquer dúvida?`;
+  };
+
+  // Substituição dinâmica de TAGs para visualização e envio
+  const resolverTagsMensagem = (texto: string, lead: CRMLead | null): string => {
+    if (!texto || !lead) return texto || '';
+    const primeiroNome = lead.nome ? lead.nome.split(' ')[0] : 'Empreendedor(a)';
+    const nomeEmpresa = lead.empresa || lead.nome;
+    const valorDebito = (lead.dados_fiscais?.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    const diasAde = lead.dados_fiscais?.prazo_regularizacao_dias ? String(lead.dados_fiscais.prazo_regularizacao_dias) : '30';
+
+    return texto
+      .replace(/{socio}/g, primeiroNome)
+      .replace(/{empresa}/g, nomeEmpresa)
+      .replace(/{cnpj}/g, lead.cpf_cnpj || '')
+      .replace(/{cidade}/g, lead.dados_fiscais?.municipio || '')
+      .replace(/{regime}/g, lead.dados_fiscais?.regime || 'Simples Nacional')
+      .replace(/{valor_debito}/g, `R$ ${valorDebito}`)
+      .replace(/{prazo_dias}/g, diasAde)
+      .replace(/{servico}/g, lead.servico_interesse || 'Assessoria Contábil')
+      .replace(/{cnae}/g, lead.dados_fiscais?.cnae_descricao || lead.dados_fiscais?.segmento || 'Atividade Comercial');
+  };
+
+  // Abrir Modal de Visualização & Edição de Mensagem
+  const handleAbrirModalMensagem = (lead: CRMLead) => {
+    setLeadMensagemAtivo(lead);
+    const msg = lead.mensagem_agendada?.mensagem || gerarMensagemPadraoLead(lead);
+    setTextoMensagemEditavel(msg);
+    setTelefoneDestinoMensagem(lead.whatsapp || lead.telefone || '');
+    setDataHoraAgendamento(lead.mensagem_agendada?.data_hora_agendada || '');
+    setStatusAgendamento(lead.mensagem_agendada?.status || 'Agendada');
+    setFeedbackMensagem(null);
+    setAbaVisualizacaoModal('editor');
+    setModalMensagemOpen(true);
+  };
+
+  // Salvar Alterações na Mensagem do Lead
+  const handleSalvarMensagemLead = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!leadMensagemAtivo) return;
+
+    const agendamentoAtualizado: MensagemAgendadaWhatsApp = {
+      id: leadMensagemAtivo.mensagem_agendada?.id || `msg-${Date.now()}`,
+      data_hora_agendada: dataHoraAgendamento || leadMensagemAtivo.mensagem_agendada?.data_hora_agendada || new Date().toLocaleString('pt-BR'),
+      telefone: telefoneDestinoMensagem,
+      mensagem: textoMensagemEditavel,
+      status: statusAgendamento,
+      created_at: leadMensagemAtivo.mensagem_agendada?.created_at || new Date().toLocaleString('pt-BR')
+    };
+
+    updateLead(leadMensagemAtivo.id, {
+      whatsapp: telefoneDestinoMensagem,
+      telefone: telefoneDestinoMensagem,
+      mensagem_agendada: agendamentoAtualizado
+    });
+
+    setFeedbackMensagem('✓ Mensagem e dados de envio atualizados com sucesso no lead!');
+    setTimeout(() => {
+      setModalMensagemOpen(false);
+      setFeedbackMensagem(null);
+      setLeadMensagemAtivo(null);
+    }, 1500);
+  };
+
+  // Disparo Imediato pela Evolution API a partir do CRM
+  const handleDispararPeloApp = async () => {
+    if (!leadMensagemAtivo || !telefoneDestinoMensagem) return;
+    setEnviandoMensagem(true);
+    setFeedbackMensagem(null);
+
+    const textoFinal = resolverTagsMensagem(textoMensagemEditavel, leadMensagemAtivo);
+
+    const ok = await enviarMensagemWhatsApp(
+      'Lead',
+      leadMensagemAtivo.nome,
+      telefoneDestinoMensagem,
+      'Lembrete Prazo',
+      textoFinal,
+      leadMensagemAtivo.id
+    );
+
+    const agendamentoAtualizado: MensagemAgendadaWhatsApp = {
+      id: leadMensagemAtivo.mensagem_agendada?.id || `msg-${Date.now()}`,
+      data_hora_agendada: new Date().toLocaleString('pt-BR'),
+      telefone: telefoneDestinoMensagem,
+      mensagem: textoFinal,
+      status: 'Enviada',
+      created_at: leadMensagemAtivo.mensagem_agendada?.created_at || new Date().toLocaleString('pt-BR')
+    };
+
+    updateLead(leadMensagemAtivo.id, {
+      whatsapp: telefoneDestinoMensagem,
+      telefone: telefoneDestinoMensagem,
+      mensagem_agendada: agendamentoAtualizado
+    });
+
+    setEnviandoMensagem(false);
+    if (ok) {
+      setFeedbackMensagem('🚀 Mensagem disparada com sucesso via WhatsApp oficial!');
+    } else {
+      setFeedbackMensagem('Instância oficial remota offline. Utilize o botão "Abrir no WhatsApp Web"!');
+    }
+
+    setTimeout(() => {
+      setModalMensagemOpen(false);
+      setFeedbackMensagem(null);
+      setLeadMensagemAtivo(null);
+    }, 2000);
+  };
+
+  // Gerar link direto wa.me com a mensagem editada
+  const gerarLinkWaMe = (): string => {
+    if (!leadMensagemAtivo) return '#';
+    let clean = (telefoneDestinoMensagem || '').replace(/\D/g, '');
+    if (clean.length === 10 || clean.length === 11) clean = `55${clean}`;
+    const textoFinal = resolverTagsMensagem(textoMensagemEditavel, leadMensagemAtivo);
+    return `https://wa.me/${clean}?text=${encodeURIComponent(textoFinal)}`;
+  };
+
+  // Copiar mensagem
+  const handleCopiarMensagem = () => {
+    const textoFinal = resolverTagsMensagem(textoMensagemEditavel, leadMensagemAtivo);
+    navigator.clipboard.writeText(textoFinal);
+    setCopiadoFeedback(true);
+    setTimeout(() => setCopiadoFeedback(false), 2000);
+  };
+
+  // Inserir TAG personalizada no editor
+  const handleInserirTagNoTexto = (tag: string) => {
+    setTextoMensagemEditavel(prev => {
+      const espaco = prev.length > 0 && !prev.endsWith(' ') && !prev.endsWith('\n') ? ' ' : '';
+      return `${prev}${espaco}${tag}`;
+    });
+  };
 
   const handleSalvarNovoLead = (e: React.FormEvent) => {
     e.preventDefault();
@@ -386,9 +555,13 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
                         </div>
                       )}
 
-                      {/* Notificação / Mensagem Agendada de WhatsApp */}
+                      {/* Notificação / Mensagem Agendada de WhatsApp (Clicável para Ver/Editar) */}
                       {lead.mensagem_agendada && (
-                        <div className="p-2 bg-blue-50/80 dark:bg-blue-950/40 rounded-xl border border-blue-200/60 dark:border-blue-900/60 text-[10px] text-blue-900 dark:text-blue-200 space-y-1">
+                        <div
+                          onClick={() => handleAbrirModalMensagem(lead)}
+                          className="p-2.5 bg-blue-50/80 hover:bg-blue-100/90 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 rounded-xl border border-blue-200/70 dark:border-blue-900/70 text-[10px] text-blue-900 dark:text-blue-200 space-y-1.5 cursor-pointer transition shadow-2xs group"
+                          title="Clique para visualizar e editar a mensagem a ser enviada"
+                        >
                           <div className="flex items-center justify-between font-bold">
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3 text-blue-600" />
@@ -401,32 +574,31 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
                           <p className="text-[10px] text-slate-600 dark:text-slate-300 line-clamp-2 italic">
                             &ldquo;{lead.mensagem_agendada.mensagem}&rdquo;
                           </p>
+                          <div className="text-[9px] text-blue-600 dark:text-blue-400 font-bold flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100 transition pt-0.5">
+                            <Edit3 className="w-3 h-3" />
+                            <span>Visualizar / Editar Mensagem</span>
+                          </div>
                         </div>
                       )}
 
-                      {/* Rodapé do Card: Responsável + WhatsApp + Botão Baixar */}
+                      {/* Rodapé do Card: Responsável + Balãozinho WhatsApp + Botão Baixar */}
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[11px]">
                         <span className="text-slate-600 dark:text-slate-400 font-medium truncate">
                           {lead.responsavel}
                         </span>
 
-                        <div className="flex items-center gap-1">
-                          {/* Botão de WhatsApp */}
+                        <div className="flex items-center gap-1.5">
+                          {/* Balãozinho: Visualizar e Editar Mensagem WhatsApp */}
                           <button
                             type="button"
-                            onClick={() => {
-                              enviarMensagemWhatsApp(
-                                'Lead',
-                                lead.nome,
-                                lead.whatsapp || lead.telefone,
-                                'Lembrete Prazo',
-                                `Olá ${lead.nome}! Tudo bem? Gostaria de saber como podemos avançar na proposta de ${lead.servico_interesse} com a fin.up!`
-                              );
-                            }}
-                            className="p-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-brand-green dark:bg-emerald-950/50 dark:hover:bg-emerald-900/50 transition"
-                            title="Enviar WhatsApp"
+                            onClick={() => handleAbrirModalMensagem(lead)}
+                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-brand-green dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 transition shadow-2xs group relative"
+                            title="Clique no balãozinho para visualizar e editar a mensagem a ser enviada via WhatsApp"
                           >
-                            <MessageSquare className="w-3.5 h-3.5" />
+                            <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            {lead.mensagem_agendada && (
+                              <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full ring-2 ring-white dark:ring-slate-800" />
+                            )}
                           </button>
 
                           {/* Botão de Baixar Lead com Justificativa */}
@@ -434,7 +606,7 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
                             <button
                               type="button"
                               onClick={() => handleAbrirModalBaixa(lead)}
-                              className="p-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/50 dark:hover:bg-red-900/50 transition"
+                              className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/50 dark:hover:bg-red-900/50 transition"
                               title="Baixar Lead com Justificativa"
                             >
                               <UserX className="w-3.5 h-3.5" />
@@ -750,6 +922,261 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
                 >
                   Confirmar Baixa do Lead
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. MODAL: VISUALIZAR & EDITAR MENSAGEM WHATSAPP DO LEAD */}
+      {modalMensagemOpen && leadMensagemAtivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-xl overflow-hidden my-8">
+            {/* Topo do Modal */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-start justify-between bg-emerald-50/40 dark:bg-emerald-950/20">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shadow-xs">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                    Mensagem de WhatsApp do Lead
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {leadMensagemAtivo.empresa || leadMensagemAtivo.nome}
+                    </span>
+                    {leadMensagemAtivo.cpf_cnpj && (
+                      <span className="text-[10px] font-mono text-slate-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                        CNPJ: {leadMensagemAtivo.cpf_cnpj}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalMensagemOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarMensagemLead} className="p-6 space-y-4 text-xs">
+              {/* Badge de Status e Programação */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                      Status do Envio:
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-block ${
+                      statusAgendamento === 'Enviada'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                    }`}>
+                      {statusAgendamento === 'Enviada' ? '✓ Mensagem Enviada' : '📅 Mensagem Agendada / Programada'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Status selector */}
+                <select
+                  value={statusAgendamento}
+                  onChange={(e) => setStatusAgendamento(e.target.value as any)}
+                  className="px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold"
+                >
+                  <option value="Agendada">Agendada</option>
+                  <option value="Enviada">Enviada</option>
+                  <option value="Cancelada">Cancelada</option>
+                </select>
+              </div>
+
+              {/* Destinatário & Horário Programado */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Telefone / WhatsApp de Destino (com DDD):
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: 19992080639"
+                      value={telefoneDestinoMensagem}
+                      onChange={(e) => setTelefoneDestinoMensagem(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Data e Horário Programado:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Ex: 2026-10-29 às 09:00"
+                      value={dataHoraAgendamento}
+                      onChange={(e) => setDataHoraAgendamento(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões para Inserção Rápida de TAGs */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1 text-[11px]">
+                    <Tag className="w-3 h-3 text-slate-400" />
+                    <span>Inserir TAG dinâmica na mensagem:</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400">Clique para adicionar</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    { tag: '{empresa}', label: 'Nome da Empresa' },
+                    { tag: '{socio}', label: 'Nome do Sócio' },
+                    { tag: '{cnpj}', label: 'CNPJ' },
+                    { tag: '{cidade}', label: 'Cidade' },
+                    { tag: '{regime}', label: 'Regime' },
+                    { tag: '{valor_debito}', label: 'Valor Débito' },
+                    { tag: '{prazo_dias}', label: 'Prazo Dias' },
+                    { tag: '{servico}', label: 'Serviço' }
+                  ].map(item => (
+                    <button
+                      key={item.tag}
+                      type="button"
+                      onClick={() => handleInserirTagNoTexto(item.tag)}
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-md font-mono text-[10px] border border-slate-200 dark:border-slate-600 transition"
+                      title={`Adicionar ${item.label} (${item.tag})`}
+                    >
+                      + {item.tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Alternância de Abas: Editor vs Pré-visualização Real */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setAbaVisualizacaoModal('editor')}
+                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                        abaVisualizacaoModal === 'editor'
+                          ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>Editar Mensagem</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAbaVisualizacaoModal('preview')}
+                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                        abaVisualizacaoModal === 'preview'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>Pré-visualização WhatsApp</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCopiarMensagem}
+                    className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                  >
+                    {copiadoFeedback ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiadoFeedback ? 'Copiado!' : 'Copiar Texto'}</span>
+                  </button>
+                </div>
+
+                {abaVisualizacaoModal === 'editor' ? (
+                  <textarea
+                    required
+                    rows={8}
+                    value={textoMensagemEditavel}
+                    onChange={(e) => setTextoMensagemEditavel(e.target.value)}
+                    placeholder="Digite a mensagem personalizada que será enviada via WhatsApp..."
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed font-sans"
+                  />
+                ) : (
+                  <div className="bg-[#EFEAE2] dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 min-h-[160px] flex flex-col justify-end">
+                    <div className="bg-white dark:bg-emerald-950/70 border border-emerald-200/50 dark:border-emerald-800/40 p-3.5 rounded-2xl rounded-tl-xs shadow-xs text-xs sm:text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap leading-relaxed max-w-[92%]">
+                      {resolverTagsMensagem(textoMensagemEditavel, leadMensagemAtivo)}
+                      <div className="text-[10px] text-slate-400 text-right mt-2 font-mono">
+                        {dataHoraAgendamento ? `Programado para ${dataHoraAgendamento}` : 'Hoje'} ✓✓
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {feedbackMensagem && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-2xl text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span className="font-semibold">{feedbackMensagem}</span>
+                </div>
+              )}
+
+              {/* Ações no Rodapé do Modal */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                <a
+                  href={gerarLinkWaMe()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl text-xs font-semibold transition"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Abrir WhatsApp Web</span>
+                </a>
+
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalMensagemOpen(false)}
+                    className="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold"
+                  >
+                    Fechar
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDispararPeloApp}
+                    disabled={enviandoMensagem || !telefoneDestinoMensagem}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-xs"
+                    title="Disparar imediatamente pela API do WhatsApp"
+                  >
+                    {enviandoMensagem ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Disparando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Disparar Agora</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-blue hover:bg-brand-blue-hover text-white rounded-xl text-xs font-bold shadow-xs transition"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Salvar Alterações</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

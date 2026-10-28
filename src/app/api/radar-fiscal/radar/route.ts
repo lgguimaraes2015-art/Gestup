@@ -9,6 +9,7 @@ export async function POST(req: NextRequest) {
       uf = '',
       municipio = '',
       regime = 'todos',
+      possuiDebitos = 'todos',
       statusRisco = 'todos',
       faixaDebito = 'todos',
       termoBusca = '',
@@ -37,13 +38,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Filtro por Regime Tributário
+    // Filtro por Regime Tributário conforme regras exatas do usuário:
+    // - Se for simples nacional mas não for MEI => apenas "Simples"
+    // - Se for simples nacional mas for MEI => apenas "MEI"
+    // - Se não for simples => "Regime Normal"
     if (regime === 'simples') {
       filtradas = filtradas.filter(e => e.optante_simples && !e.optante_mei);
     } else if (regime === 'mei') {
       filtradas = filtradas.filter(e => e.optante_mei);
-    } else if (regime === 'outros') {
-      filtradas = filtradas.filter(e => !e.optante_simples && !e.optante_mei);
+    } else if (regime === 'normal' || regime === 'outros') {
+      filtradas = filtradas.filter(e => !e.optante_simples);
+    }
+
+    // Filtro por Possui Débitos ou Não:
+    if (possuiDebitos === 'com_debitos' || possuiDebitos === 'sim') {
+      filtradas = filtradas.filter(e => e.tem_ade_ativo || (e.tem_divida_pgfn && e.valor_divida_pgfn > 0) || Boolean(e.valor_divida_estadual && e.valor_divida_estadual > 0));
+    } else if (possuiDebitos === 'sem_debitos' || possuiDebitos === 'nao') {
+      filtradas = filtradas.filter(e => !e.tem_ade_ativo && (!e.tem_divida_pgfn || e.valor_divida_pgfn === 0) && (!e.valor_divida_estadual || e.valor_divida_estadual === 0));
     }
 
     // Filtro por Status de Risco Fiscal / ADE / PGFN

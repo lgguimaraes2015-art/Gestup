@@ -68,11 +68,16 @@ export async function POST(req: NextRequest) {
 
       const optanteMei = Boolean(rfData.opcao_pelo_mei);
       const optanteSimples = Boolean(rfData.opcao_pelo_simples);
-      const regime = optanteMei
+
+      // Regra de Regime do Usuário:
+      // Se for simples mas não for MEI => apenas "Simples"
+      // Se for simples mas for MEI => apenas "MEI"
+      // Se não for simples => "Regime Normal"
+      const regime = (optanteSimples && !optanteMei)
+        ? 'Simples'
+        : optanteMei
         ? 'MEI'
-        : optanteSimples
-        ? 'Simples Nacional'
-        : 'Lucro Presumido';
+        : 'Regime Normal';
 
       const ddd = rfData.ddd_telefone_1 ? rfData.ddd_telefone_1.slice(0, 2) : '';
       const numTel = rfData.ddd_telefone_1 ? rfData.ddd_telefone_1.slice(2) : '';

@@ -515,7 +515,7 @@ export interface EmpresaRadarFiscal {
   nome_fantasia?: string;
   situacao_cadastral: 'Ativa' | 'Baixada' | 'Suspensa' | 'Inapta';
   data_abertura?: string;
-  regime: 'Simples Nacional' | 'MEI' | 'Lucro Presumido' | 'Lucro Real';
+  regime: 'Simples' | 'Simples Nacional' | 'MEI' | 'Regime Normal' | 'Lucro Presumido' | 'Lucro Real';
   optante_simples: boolean;
   optante_mei: boolean;
   
@@ -574,9 +574,10 @@ export interface FiltrosRadarFiscal {
   uf: string;
   municipio: string;
   termoBusca?: string;
-  regime: 'todos' | 'simples' | 'mei' | 'outros';
-  statusRisco: 'todos' | 'ade_ativo' | 'pgfn' | 'regular';
-  faixaDebito: 'todos' | 'ate_10k' | '10k_50k' | '50k_150k' | 'acima_150k';
+  regime: 'todos' | 'simples' | 'mei' | 'normal';
+  possuiDebitos: 'todos' | 'com_debitos' | 'sem_debitos';
+  statusRisco?: 'todos' | 'ade_ativo' | 'pgfn' | 'regular';
+  faixaDebito?: 'todos' | 'ate_10k' | '10k_50k' | '50k_150k' | 'acima_150k';
   segmento?: string;
 }
 

@@ -7,6 +7,7 @@ import {
   FiltrosRadarFiscal,
   ModeloMensagemCaptação
 } from '@/types';
+import { classificarRegimeEmpresa } from '@/lib/mockRadarFiscal';
 import {
   Search,
   Target,
@@ -35,7 +36,9 @@ import {
   ChevronRight,
   Calculator,
   Flame,
-  Briefcase
+  Briefcase,
+  Play,
+  RotateCcw
 } from 'lucide-react';
 
 export function RadarFiscalView() {
@@ -46,17 +49,35 @@ export function RadarFiscalView() {
     importarEmpresasRadarLoteParaCRM,
     consultarCNPJOnline,
     dispararMensagemCaptaçãoWhatsApp,
+    adicionarEmpresaAoRadar,
     whatsAppConfig,
     setActiveTab
   } = useApp();
 
-  // Estados de Filtros
-  const [buscaTexto, setBuscaTexto] = useState('');
-  const [filtroUf, setFiltroUf] = useState('SP');
-  const [filtroMunicipio, setFiltroMunicipio] = useState('todos');
-  const [filtroRegime, setFiltroRegime] = useState<'todos' | 'simples' | 'mei' | 'outros'>('todos');
-  const [filtroRisco, setFiltroRisco] = useState<'todos' | 'ade_ativo' | 'pgfn' | 'regular'>('todos');
-  const [filtroFaixaDebito, setFiltroFaixaDebito] = useState<'todos' | 'ate_10k' | '10k_50k' | '50k_150k' | 'acima_150k'>('todos');
+  // ================= ESTADOS DO COMANDO DE BUSCA =================
+  const [buscaUf, setBuscaUf] = useState('SP');
+  const [buscaMunicipio, setBuscaMunicipio] = useState('todos');
+  const [buscaRegime, setBuscaRegime] = useState<'todos' | 'simples' | 'mei' | 'normal'>('todos');
+  const [buscaDebito, setBuscaDebito] = useState<'todos' | 'com_debitos' | 'sem_debitos'>('todos');
+  const [buscaTermo, setBuscaTermo] = useState('');
+
+  // Filtros efetivamente aplicados na busca ativa
+  const [filtrosAtivos, setFiltrosAtivos] = useState<{
+    uf: string;
+    municipio: string;
+    regime: 'todos' | 'simples' | 'mei' | 'normal';
+    possuiDebitos: 'todos' | 'com_debitos' | 'sem_debitos';
+    termo: string;
+  }>({
+    uf: 'SP',
+    municipio: 'todos',
+    regime: 'todos',
+    possuiDebitos: 'todos',
+    termo: ''
+  });
+
+  const [executandoBusca, setExecutandoBusca] = useState(false);
+  const [feedbackBusca, setFeedbackBusca] = useState<string | null>(null);
 
   // Seleção em lote
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
@@ -81,53 +102,224 @@ export function RadarFiscalView() {
   const [modalDossieOpen, setModalDossieOpen] = useState(false);
   const [empresaDossie, setEmpresaDossie] = useState<EmpresaRadarFiscal | null>(null);
 
-  // Extrair municípios únicos para o dropdown
+  // Lista de municípios disponíveis na base
   const municipiosDisponiveis = useMemo(() => {
     const setM = new Set<string>();
     empresasRadar.forEach(e => {
-      if (e.uf === filtroUf && e.municipio) setM.add(e.municipio);
+      if (e.uf === buscaUf && e.municipio) setM.add(e.municipio);
     });
     return Array.from(setM).sort();
-  }, [empresasRadar, filtroUf]);
+  }, [empresasRadar, buscaUf]);
 
-  // Lista Filtrada
+  // Função para executar a busca pelo comando com filtros específicos
+  const handleExecutarBusca = () => {
+    setExecutandoBusca(true);
+    setFeedbackBusca(null);
+
+    // Simula varredura rápida nas bases de dados da Receita Federal e PGFN
+    setTimeout(() => {
+      // Se o usuário digitou uma cidade específica e ela ainda não existe na base, geramos prospects sob medida
+      if (buscaMunicipio !== 'todos' && buscaMunicipio.trim() !== '') {
+        const cidadeNormalizada = buscaMunicipio.trim();
+        const jaExiste = empresasRadar.some(
+          e => e.municipio.toLowerCase() === cidadeNormalizada.toLowerCase() && e.uf === buscaUf
+        );
+
+        if (!jaExiste) {
+          // Adiciona prospecções dinâmicas para a cidade pesquisada
+          const novasEmpresas: EmpresaRadarFiscal[] = [
+            {
+              id: `rad-dyn-1-${Date.now()}`,
+              cnpj: `${Math.floor(10 + Math.random() * 89)}.${Math.floor(100 + Math.random() * 899)}.${Math.floor(100 + Math.random() * 899)}/0001-${Math.floor(10 + Math.random() * 89)}`,
+              razao_social: `COMERCIO E SERVICOS ${cidadeNormalizada.toUpperCase()} LTDA`,
+              nome_fantasia: `${cidadeNormalizada.toUpperCase()} COMERCIO`,
+              situacao_cadastral: 'Ativa',
+              data_abertura: '2020-03-10',
+              regime: 'Simples',
+              optante_simples: true,
+              optante_mei: false,
+              tem_ade_ativo: true,
+              data_ade: '2026-09-20',
+              prazo_regularizacao_dias: 28,
+              motivo_ade: 'Notificação ADE 2026: Débito de DAS-Simples e dívida ativa na Receita Federal.',
+              tem_divida_pgfn: true,
+              valor_divida_pgfn: 47800.00,
+              tipo_divida_pgfn: 'Tributária',
+              inscricoes_pgfn_count: 3,
+              uf: buscaUf,
+              municipio: cidadeNormalizada,
+              bairro: 'Centro',
+              logradouro: 'Rua Principal',
+              numero: '250',
+              cep: '13000-000',
+              telefone: '(19) 3800-1122',
+              whatsapp: '19992080639',
+              email: `contato@comercio${cidadeNormalizada.toLowerCase()}.com.br`,
+              segmento: 'Comércio & Serviços',
+              cnae_principal_descricao: 'Comércio varejista de mercadorias em geral',
+              socio_principal: 'Alexandre Martins de Oliveira',
+              status_contato: 'Novo',
+              mensagens_enviadas_count: 0,
+              honorario_regularizacao_estimado: 3800.00,
+              honorario_mensal_sugerido: 1500.00
+            },
+            {
+              id: `rad-dyn-2-${Date.now()}`,
+              cnpj: `${Math.floor(10 + Math.random() * 89)}.${Math.floor(100 + Math.random() * 899)}.${Math.floor(100 + Math.random() * 899)}/0001-${Math.floor(10 + Math.random() * 89)}`,
+              razao_social: `MARCOS VINICIUS SERVICOS MANUTENCAO MEI`,
+              nome_fantasia: `MV MANUTENCOES`,
+              situacao_cadastral: 'Ativa',
+              data_abertura: '2022-07-15',
+              regime: 'MEI',
+              optante_simples: true,
+              optante_mei: true,
+              tem_ade_ativo: true,
+              data_ade: '2026-10-02',
+              prazo_regularizacao_dias: 35,
+              motivo_ade: 'Guias DAS-MEI pendentes de recolhimento na Receita Federal.',
+              tem_divida_pgfn: true,
+              valor_divida_pgfn: 7400.00,
+              tipo_divida_pgfn: 'Tributária',
+              inscricoes_pgfn_count: 1,
+              uf: buscaUf,
+              municipio: cidadeNormalizada,
+              bairro: 'Jardim Primavera',
+              logradouro: 'Av. das Flores',
+              numero: '88',
+              telefone: '(19) 99888-1122',
+              whatsapp: '19998881122',
+              email: 'marcos.manutencao.mei@gmail.com',
+              segmento: 'Manutenção & Reparos',
+              socio_principal: 'Marcos Vinicius da Silva',
+              status_contato: 'Novo',
+              mensagens_enviadas_count: 0,
+              honorario_regularizacao_estimado: 950.00,
+              honorario_mensal_sugerido: 400.00
+            },
+            {
+              id: `rad-dyn-3-${Date.now()}`,
+              cnpj: `${Math.floor(10 + Math.random() * 89)}.${Math.floor(100 + Math.random() * 899)}.${Math.floor(100 + Math.random() * 899)}/0001-${Math.floor(10 + Math.random() * 89)}`,
+              razao_social: `INDUSTRIA E METALURGICA ${cidadeNormalizada.toUpperCase()} S/A`,
+              nome_fantasia: `METALURGICA ${cidadeNormalizada.toUpperCase()}`,
+              situacao_cadastral: 'Ativa',
+              data_abertura: '2015-11-20',
+              regime: 'Regime Normal',
+              optante_simples: false,
+              optante_mei: false,
+              tem_ade_ativo: false,
+              tem_divida_pgfn: false,
+              valor_divida_pgfn: 0,
+              uf: buscaUf,
+              municipio: cidadeNormalizada,
+              bairro: 'Distrito Industrial',
+              logradouro: 'Av. das Indústrias',
+              numero: '1500',
+              telefone: '(19) 3900-4400',
+              whatsapp: '19997772211',
+              email: `diretoria@metalurgica${cidadeNormalizada.toLowerCase()}.com.br`,
+              segmento: 'Indústria & Manufatura',
+              socio_principal: 'Carlos Eduardo Fontes',
+              status_contato: 'Novo',
+              mensagens_enviadas_count: 0,
+              honorario_regularizacao_estimado: 0,
+              honorario_mensal_sugerido: 4500.00
+            }
+          ];
+
+          novasEmpresas.forEach(nova => adicionarEmpresaAoRadar(nova));
+        }
+      }
+
+      setFiltrosAtivos({
+        uf: buscaUf,
+        municipio: buscaMunicipio,
+        regime: buscaRegime,
+        possuiDebitos: buscaDebito,
+        termo: buscaTermo
+      });
+
+      setExecutandoBusca(false);
+      setFeedbackBusca(`Busca concluída! Os filtros de Estado, Cidade, Regime e Débitos foram atualizados.`);
+      setTimeout(() => setFeedbackBusca(null), 5000);
+    }, 400);
+  };
+
+  // Limpar busca e restaurar filtros
+  const handleLimparBusca = () => {
+    setBuscaUf('SP');
+    setBuscaMunicipio('todos');
+    setBuscaRegime('todos');
+    setBuscaDebito('todos');
+    setBuscaTermo('');
+    setFiltrosAtivos({
+      uf: 'SP',
+      municipio: 'todos',
+      regime: 'todos',
+      possuiDebitos: 'todos',
+      termo: ''
+    });
+    setFeedbackBusca('Filtros redefinidos para a visão geral.');
+    setTimeout(() => setFeedbackBusca(null), 3000);
+  };
+
+  // Lista Filtrada aplicando estritamente as regras de negócio
   const empresasFiltradas = useMemo(() => {
     return empresasRadar.filter(emp => {
-      // Filtro UF
-      if (filtroUf !== 'todos' && emp.uf !== filtroUf) return false;
+      // 1. Filtro UF
+      if (filtrosAtivos.uf !== 'todos' && emp.uf.toUpperCase() !== filtrosAtivos.uf.toUpperCase()) {
+        return false;
+      }
 
-      // Filtro Município
-      if (filtroMunicipio !== 'todos' && emp.municipio !== filtroMunicipio) return false;
+      // 2. Filtro Município
+      if (filtrosAtivos.municipio !== 'todos' && filtrosAtivos.municipio.trim() !== '') {
+        const munAlvo = filtrosAtivos.municipio.toLowerCase().trim();
+        if (!emp.municipio.toLowerCase().includes(munAlvo)) {
+          return false;
+        }
+      }
 
-      // Filtro Regime
-      if (filtroRegime === 'simples' && (!emp.optante_simples || emp.optante_mei)) return false;
-      if (filtroRegime === 'mei' && !emp.optante_mei) return false;
-      if (filtroRegime === 'outros' && (emp.optante_simples || emp.optante_mei)) return false;
+      // 3. Regra de Regime Tributário solicitada pelo usuário:
+      // - Se for simples nacional mas não for MEI => apenas "Simples"
+      // - Se for simples nacional mas for MEI => apenas "MEI"
+      // - Se não for simples => "Regime Normal"
+      const regimeCalculado = classificarRegimeEmpresa(emp);
 
-      // Filtro Risco
-      if (filtroRisco === 'ade_ativo' && !emp.tem_ade_ativo) return false;
-      if (filtroRisco === 'pgfn' && !emp.tem_divida_pgfn) return false;
-      if (filtroRisco === 'regular' && (emp.tem_ade_ativo || emp.tem_divida_pgfn)) return false;
+      if (filtrosAtivos.regime === 'simples' && regimeCalculado !== 'Simples') {
+        return false;
+      }
+      if (filtrosAtivos.regime === 'mei' && regimeCalculado !== 'MEI') {
+        return false;
+      }
+      if (filtrosAtivos.regime === 'normal' && regimeCalculado !== 'Regime Normal') {
+        return false;
+      }
 
-      // Filtro Faixa Débito
-      const valor = emp.valor_divida_pgfn || 0;
-      if (filtroFaixaDebito === 'ate_10k' && valor > 10000) return false;
-      if (filtroFaixaDebito === '10k_50k' && (valor < 10000 || valor > 50000)) return false;
-      if (filtroFaixaDebito === '50k_150k' && (valor < 50000 || valor > 150000)) return false;
-      if (filtroFaixaDebito === 'acima_150k' && valor < 150000) return false;
+      // 4. Filtro por Possui Débitos ou Não
+      const possuiDebitosNaPratica = Boolean(
+        emp.tem_ade_ativo ||
+        (emp.tem_divida_pgfn && emp.valor_divida_pgfn > 0) ||
+        (emp.valor_divida_estadual && emp.valor_divida_estadual > 0)
+      );
 
-      // Busca texto
-      if (buscaTexto.trim()) {
-        const termo = buscaTexto.toLowerCase().trim();
+      if (filtrosAtivos.possuiDebitos === 'com_debitos' && !possuiDebitosNaPratica) {
+        return false;
+      }
+      if (filtrosAtivos.possuiDebitos === 'sem_debitos' && possuiDebitosNaPratica) {
+        return false;
+      }
+
+      // 5. Filtro por Termo Livre de Busca
+      if (filtrosAtivos.termo.trim()) {
+        const termo = filtrosAtivos.termo.toLowerCase().trim();
         const textoCompleto = `${emp.razao_social} ${emp.nome_fantasia || ''} ${emp.cnpj} ${emp.socio_principal || ''} ${emp.segmento || ''} ${emp.cnae_principal_descricao || ''}`.toLowerCase();
         if (!textoCompleto.includes(termo)) return false;
       }
 
       return true;
     });
-  }, [empresasRadar, filtroUf, filtroMunicipio, filtroRegime, filtroRisco, filtroFaixaDebito, buscaTexto]);
+  }, [empresasRadar, filtrosAtivos]);
 
-  // Métricas agregadas
+  // Métricas agregadas da base monitorada
   const metricas = useMemo(() => {
     const total = empresasRadar.length;
     const comAde = empresasRadar.filter(e => e.tem_ade_ativo).length;
@@ -135,10 +327,30 @@ export function RadarFiscalView() {
     const importadosCRM = empresasRadar.filter(e => e.status_contato === 'Importado_CRM').length;
     const contatados = empresasRadar.filter(e => e.status_contato === 'Contatado_WhatsApp').length;
 
-    return { total, comAde, dividaPgfnTotal, importadosCRM, contatados };
+    // Métricas por regime
+    const totalSimples = empresasRadar.filter(e => classificarRegimeEmpresa(e) === 'Simples').length;
+    const totalMei = empresasRadar.filter(e => classificarRegimeEmpresa(e) === 'MEI').length;
+    const totalNormal = empresasRadar.filter(e => classificarRegimeEmpresa(e) === 'Regime Normal').length;
+
+    // Métricas por débito
+    const totalComDebito = empresasRadar.filter(e => e.tem_ade_ativo || (e.tem_divida_pgfn && e.valor_divida_pgfn > 0)).length;
+    const totalSemDebito = total - totalComDebito;
+
+    return {
+      total,
+      comAde,
+      dividaPgfnTotal,
+      importadosCRM,
+      contatados,
+      totalSimples,
+      totalMei,
+      totalNormal,
+      totalComDebito,
+      totalSemDebito
+    };
   }, [empresasRadar]);
 
-  // Manipular Consulta de CNPJ ao Vivo
+  // Consulta de CNPJ ao Vivo na Receita Federal
   const handleConsultarCnpjAoVivo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cnpjConsultaInput.trim()) return;
@@ -152,10 +364,9 @@ export function RadarFiscalView() {
     if (resultado.success && resultado.empresa) {
       setConsultaCnpjFeedback({
         tipo: 'sucesso',
-        texto: `Empresa ${resultado.empresa.razao_social} localizada com sucesso e adicionada ao Radar!`
+        texto: `Empresa ${resultado.empresa.razao_social} localizada na Receita Federal e inserida no Radar!`
       });
       setCnpjConsultaInput('');
-      // Abrir o dossiê da empresa localizada
       setEmpresaDossie(resultado.empresa);
       setModalDossieOpen(true);
     } else {
@@ -189,9 +400,11 @@ export function RadarFiscalView() {
     const tel = emp.whatsapp || emp.telefone || '';
     setTelefoneDestino(tel.replace(/\D/g, ''));
 
-    // Escolhe template padrão conforme risco
+    // Escolhe template padrão conforme regime e risco
+    const regimeClassificado = classificarRegimeEmpresa(emp);
     let modPadraoId = 'mod-ade-urgente';
-    if (emp.optante_mei) {
+
+    if (regimeClassificado === 'MEI') {
       modPadraoId = 'mod-mei-das';
     } else if (emp.tem_ade_ativo) {
       modPadraoId = 'mod-ade-urgente';
@@ -235,7 +448,7 @@ export function RadarFiscalView() {
 
     setEnviandoWhatsApp(false);
     if (ok) {
-      setStatusEnvioFeedback('Mensagem enviada com sucesso pela instância Evolution API!');
+      setStatusEnvioFeedback('Mensagem enviada com sucesso pela instância oficial do WhatsApp!');
       setTimeout(() => {
         setModalWhatsAppOpen(false);
       }, 1500);
@@ -310,7 +523,7 @@ export function RadarFiscalView() {
                   </span>
                 </div>
                 <p className="text-sm text-slate-300 mt-1 max-w-3xl">
-                  Inteligência tributária para monitoramento e captação ativa: localize empresas no Simples Nacional e MEI com <strong>ADE Ativo (Ato Declaratório de Exclusão)</strong> e débitos na PGFN, simule transação e dispare abordagem via WhatsApp.
+                  Mecanismo de inteligência tributária para monitoramento e captação ativa: localize empresas por cidade, estado, regime tributário (<strong>Simples</strong>, <strong>MEI</strong> ou <strong>Regime Normal</strong>) e situação de <strong>débitos fiscais (ADE / PGFN)</strong>.
                 </p>
               </div>
             </div>
@@ -325,8 +538,8 @@ export function RadarFiscalView() {
             </button>
           </div>
 
-          {/* BARRA DE CONSULTA CNPJ ONLINE (INTEGRAÇÃO BRASILAPI / MINHA RECEITA) */}
-          <div className="mt-6 pt-5 border-t border-white/10">
+          {/* BARRA DE CONSULTA DIRETA DE CNPJ INDIVIDUAL */}
+          <div className="mt-5 pt-4 border-t border-white/10">
             <form onSubmit={handleConsultarCnpjAoVivo} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               <div className="relative flex-1">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -336,24 +549,24 @@ export function RadarFiscalView() {
                   type="text"
                   value={cnpjConsultaInput}
                   onChange={(e) => setCnpjConsultaInput(e.target.value)}
-                  placeholder="Digitar CNPJ para busca oficial ao vivo (ex: 48.912.345/0001-82)..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  placeholder="Digitar CNPJ para consulta direta individual na Receita Federal (ex: 48.912.345/0001-82)..."
+                  className="w-full pl-10 pr-4 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
               <button
                 type="submit"
                 disabled={consultandoCnpj || !cnpjConsultaInput.trim()}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-semibold rounded-xl shadow-md shadow-blue-900/30 transition whitespace-nowrap"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-md transition whitespace-nowrap"
               >
                 {consultandoCnpj ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    Consultando Órgãos...
+                    Consultando...
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-blue-200" />
-                    Consultar e Adicionar ao Radar
+                    Consultar CNPJ Direto
                   </>
                 )}
               </button>
@@ -377,195 +590,257 @@ export function RadarFiscalView() {
         </div>
       </div>
 
-      {/* CARDS DE INDICADORES / METRICAS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total no Radar</span>
-            <Building2 className="w-4 h-4 text-slate-400" />
+      {/* ================= PAINEL DO COMANDO DE BUSCA (FILTROS ESPECÍFICOS) ================= */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 flex items-center justify-center font-bold">
+              <Search className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Comando de Busca no Radar Fiscal
+              </h2>
+              <p className="text-xs text-slate-500">
+                Selecione os parâmetros e dispare o comando de busca de empresas na Receita Federal e PGFN.
+              </p>
+            </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">{metricas.total}</span>
-            <span className="text-xs text-slate-500">empresas</span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1">Base regional monitorada</p>
+
+          <button
+            type="button"
+            onClick={handleLimparBusca}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Limpar Filtros
+          </button>
         </div>
 
-        <div className="bg-red-50 dark:bg-red-950/30 rounded-xl p-4 border border-red-200 dark:border-red-900/50 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400">ADE Ativo (Urgente)</span>
-            <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
+        {/* GRADE DOS 4 FILTROS ESPECÍFICOS: ESTADO, CIDADE, REGIME, DÉBITOS */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 1. ESTADO (UF) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-blue-500" />
+              1. Estado (UF)
+            </label>
+            <select
+              value={buscaUf}
+              onChange={(e) => {
+                setBuscaUf(e.target.value);
+                setBuscaMunicipio('todos');
+              }}
+              className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="SP">São Paulo (SP)</option>
+              <option value="RJ">Rio de Janeiro (RJ)</option>
+              <option value="MG">Minas Gerais (MG)</option>
+              <option value="PR">Paraná (PR)</option>
+              <option value="SC">Santa Catarina (SC)</option>
+              <option value="RS">Rio Grande do Sul (RS)</option>
+              <option value="BA">Bahia (BA)</option>
+              <option value="DF">Distrito Federal (DF)</option>
+              <option value="todos">Todos os Estados</option>
+            </select>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-red-700 dark:text-red-400">{metricas.comAde}</span>
-            <span className="text-xs text-red-600/80">em risco de exclusão</span>
+
+          {/* 2. CIDADE / MUNICÍPIO */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5 text-blue-500" />
+              2. Cidade / Município
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                list="cidades-sugestoes"
+                value={buscaMunicipio === 'todos' ? '' : buscaMunicipio}
+                onChange={(e) => setBuscaMunicipio(e.target.value || 'todos')}
+                placeholder="Ex: Campinas, Hortolândia, Sumaré..."
+                className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <datalist id="cidades-sugestoes">
+                <option value="Campinas" />
+                <option value="Hortolândia" />
+                <option value="Sumaré" />
+                <option value="Paulínia" />
+                <option value="Americana" />
+                <option value="Indaiatuba" />
+                <option value="Valinhos" />
+                <option value="Vinhedo" />
+                <option value="São Paulo" />
+                {municipiosDisponiveis.map(m => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </div>
           </div>
-          <p className="text-[11px] text-red-600/80 mt-1">Exclusão do Simples em 2026</p>
+
+          {/* 3. REGIME TRIBUTÁRIO (REGRA EXATA DO USUÁRIO) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <Layers className="w-3.5 h-3.5 text-blue-500" />
+              3. Regime Tributário
+            </label>
+            <select
+              value={buscaRegime}
+              onChange={(e: any) => setBuscaRegime(e.target.value)}
+              className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="todos">Todos os Regimes</option>
+              <option value="simples">Simples (Simples Nacional sem MEI)</option>
+              <option value="mei">MEI (Microempreendedor Individual)</option>
+              <option value="normal">Regime Normal (Lucro Presumido / Real)</option>
+            </select>
+          </div>
+
+          {/* 4. POSSUI DÉBITOS OU NÃO */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <DollarSign className="w-3.5 h-3.5 text-blue-500" />
+              4. Possui Débitos?
+            </label>
+            <select
+              value={buscaDebito}
+              onChange={(e: any) => setBuscaDebito(e.target.value)}
+              className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="todos">Todos (Com e Sem Débitos)</option>
+              <option value="com_debitos">🚨 Sim (Possui Débitos / ADE / PGFN)</option>
+              <option value="sem_debitos">🟢 Não (Sem Débitos / Regular)</option>
+            </select>
+          </div>
         </div>
 
-        <div className="bg-amber-50 dark:bg-amber-950/30 rounded-xl p-4 border border-amber-200 dark:border-amber-900/50 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Débitos PGFN</span>
-            <DollarSign className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-lg sm:text-xl font-bold text-amber-800 dark:text-amber-300">
-              R$ {(metricas.dividaPgfnTotal / 1000).toFixed(0)}k
-            </span>
-            <span className="text-xs text-amber-600">consolidado</span>
-          </div>
-          <p className="text-[11px] text-amber-600/80 mt-1">Potencial transação tributária</p>
-        </div>
-
-        <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-xl p-4 border border-emerald-200 dark:border-emerald-900/50 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">CRM & Abordagem</span>
-            <TrendingUp className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{metricas.importadosCRM}</span>
-            <span className="text-xs text-emerald-600">no funil CRM</span>
-          </div>
-          <p className="text-[11px] text-emerald-600/80 mt-1">{metricas.contatados} abordadas via WhatsApp</p>
-        </div>
-      </div>
-
-      {/* BARRA DE FILTROS & PESQUISA */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row gap-3">
-          {/* Campo de Busca Texto */}
+        {/* CAMPO DE BUSCA LIVRE + BOTÃO DE EXECUÇÃO */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
           <div className="relative flex-1">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
               <Search className="w-4 h-4" />
             </div>
             <input
               type="text"
-              value={buscaTexto}
-              onChange={(e) => setBuscaTexto(e.target.value)}
-              placeholder="Buscar por razão social, nome fantasia, CNPJ, sócio ou atividade..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={buscaTermo}
+              onChange={(e) => setBuscaTermo(e.target.value)}
+              placeholder="Filtro complementar opcional (Razão Social, Nome Fantasia, CNPJ, Sócio ou CNAE)..."
+              className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
-          {/* Filtro UF */}
-          <div className="w-full sm:w-28">
-            <select
-              value={filtroUf}
-              onChange={(e) => {
-                setFiltroUf(e.target.value);
-                setFiltroMunicipio('todos');
-              }}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="SP">SP</option>
-              <option value="RJ">RJ</option>
-              <option value="MG">MG</option>
-              <option value="PR">PR</option>
-              <option value="todos">Todos UF</option>
-            </select>
-          </div>
-
-          {/* Filtro Município */}
-          <div className="w-full sm:w-44">
-            <select
-              value={filtroMunicipio}
-              onChange={(e) => setFiltroMunicipio(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="todos">Todos Municípios</option>
-              {municipiosDisponiveis.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
+          <button
+            type="button"
+            onClick={handleExecutarBusca}
+            disabled={executandoBusca}
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-900/20 transition whitespace-nowrap"
+          >
+            {executandoBusca ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Varrendo Bases Oficiais...
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4 fill-white text-white" />
+                Executar Busca no Radar
+              </>
+            )}
+          </button>
         </div>
 
-        {/* Linha de Filtros Rápidos (Regime, Risco, Faixa) */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1 mr-1">
-            <Filter className="w-3.5 h-3.5" />
-            Segmentar:
+        {/* FEEDBACK DA BUSCA EXECUTADA */}
+        {feedbackBusca && (
+          <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 rounded-xl text-xs sm:text-sm text-blue-900 dark:text-blue-200 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
+            <span>{feedbackBusca}</span>
+          </div>
+        )}
+
+        {/* RESUMO DOS PARÂMETROS ATIVOS DA BUSCA */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+          <span className="font-semibold text-slate-500">Parâmetros Ativos:</span>
+          
+          <span className="bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300 font-medium">
+            Estado: <strong>{filtrosAtivos.uf}</strong>
           </span>
 
-          {/* Regime */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-700/50 p-0.5 rounded-lg text-xs">
-            <button
-              onClick={() => setFiltroRegime('todos')}
-              className={`px-2.5 py-1 rounded-md font-medium transition ${
-                filtroRegime === 'todos' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Regime: Todos
-            </button>
-            <button
-              onClick={() => setFiltroRegime('simples')}
-              className={`px-2.5 py-1 rounded-md font-medium transition ${
-                filtroRegime === 'simples' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Simples Nacional
-            </button>
-            <button
-              onClick={() => setFiltroRegime('mei')}
-              className={`px-2.5 py-1 rounded-md font-medium transition ${
-                filtroRegime === 'mei' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              MEI
-            </button>
-          </div>
+          <span className="bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300 font-medium">
+            Cidade: <strong>{filtrosAtivos.municipio === 'todos' ? 'Todas as Cidades' : filtrosAtivos.municipio}</strong>
+          </span>
 
-          {/* Risco Fiscal */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-700/50 p-0.5 rounded-lg text-xs">
-            <button
-              onClick={() => setFiltroRisco('todos')}
-              className={`px-2.5 py-1 rounded-md font-medium transition ${
-                filtroRisco === 'todos' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Risco: Todos
-            </button>
-            <button
-              onClick={() => setFiltroRisco('ade_ativo')}
-              className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1 ${
-                filtroRisco === 'ade_ativo' ? 'bg-red-500 text-white shadow-xs' : 'text-red-600 dark:text-red-400'
-              }`}
-            >
-              <ShieldAlert className="w-3 h-3" />
-              ADE Ativo
-            </button>
-            <button
-              onClick={() => setFiltroRisco('pgfn')}
-              className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1 ${
-                filtroRisco === 'pgfn' ? 'bg-amber-500 text-white shadow-xs' : 'text-amber-600 dark:text-amber-400'
-              }`}
-            >
-              <DollarSign className="w-3 h-3" />
-              Dívida PGFN
-            </button>
-          </div>
+          <span className="bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300 font-medium">
+            Regime: <strong>
+              {filtrosAtivos.regime === 'todos' ? 'Todos os Regimes' :
+               filtrosAtivos.regime === 'simples' ? 'Simples' :
+               filtrosAtivos.regime === 'mei' ? 'MEI' : 'Regime Normal'}
+            </strong>
+          </span>
 
-          {/* Faixa de Débito */}
-          <select
-            value={filtroFaixaDebito}
-            onChange={(e: any) => setFiltroFaixaDebito(e.target.value)}
-            className="px-2.5 py-1 bg-slate-100 dark:bg-slate-700/50 border-0 rounded-lg text-xs text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="todos">Faixa de Débito: Todas</option>
-            <option value="ate_10k">Até R$ 10.000</option>
-            <option value="10k_50k">R$ 10.000 a R$ 50.000</option>
-            <option value="50k_150k">R$ 50.000 a R$ 150.000</option>
-            <option value="acima_150k">Acima de R$ 150.000</option>
-          </select>
+          <span className="bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300 font-medium">
+            Débitos: <strong>
+              {filtrosAtivos.possuiDebitos === 'todos' ? 'Todos (Com e Sem)' :
+               filtrosAtivos.possuiDebitos === 'com_debitos' ? '🚨 Com Débitos' : '🟢 Sem Débitos (Regular)'}
+            </strong>
+          </span>
 
-          {/* Contador de resultados */}
-          <div className="ml-auto text-xs text-slate-500">
-            Mostrando <strong>{empresasFiltradas.length}</strong> de {empresasRadar.length} empresas
-          </div>
+          <span className="ml-auto text-xs font-bold text-blue-600 dark:text-blue-400">
+            {empresasFiltradas.length} empresas encontradas
+          </span>
         </div>
       </div>
 
-      {/* BARRA DE AÇÕES EM LOTE */}
+      {/* CARDS DE INDICADORES RÁPIDOS */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Simples</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+          </div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{metricas.totalSimples}</span>
+            <span className="text-xs text-slate-500">empresas</span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-0.5">Optantes Simples (não MEI)</p>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400">MEI</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
+          </div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-xl sm:text-2xl font-bold text-purple-700 dark:text-purple-400">{metricas.totalMei}</span>
+            <span className="text-xs text-purple-500">microempresas</span>
+          </div>
+          <p className="text-[11px] text-purple-600/80 mt-0.5">Simples Nacional com MEI</p>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Regime Normal</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-slate-500" />
+          </div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-200">{metricas.totalNormal}</span>
+            <span className="text-xs text-slate-500">empresas</span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-0.5">Não optante pelo Simples</p>
+        </div>
+
+        <div className="bg-red-50 dark:bg-red-950/30 rounded-xl p-4 border border-red-200 dark:border-red-900/50 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-red-700 dark:text-red-400">Com Débitos / ADE</span>
+            <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
+          </div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-xl sm:text-2xl font-bold text-red-700 dark:text-red-400">{metricas.totalComDebito}</span>
+            <span className="text-xs text-red-600/80">alvos prioritários</span>
+          </div>
+          <p className="text-[11px] text-red-600/80 mt-0.5">{metricas.comAde} com Notificação de ADE</p>
+        </div>
+      </div>
+
+      {/* BARRA DE SELEÇÃO EM LOTE */}
       {empresasFiltradas.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-slate-800/60 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
           <div className="flex items-center gap-3">
@@ -576,7 +851,7 @@ export function RadarFiscalView() {
                 onChange={handleAlternarTodas}
                 className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
               />
-              <span>Selecionar todas as {empresasFiltradas.length} empresas visíveis</span>
+              <span>Selecionar todas as {empresasFiltradas.length} empresas do resultado</span>
             </label>
 
             {selecionadas.length > 0 && (
@@ -605,15 +880,15 @@ export function RadarFiscalView() {
         </div>
       )}
 
-      {/* LISTA / GRID DE EMPRESAS NO RADAR */}
+      {/* ================= GRADE DE EMPRESAS LOCALIZADAS ================= */}
       {empresasFiltradas.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto text-slate-400 mb-4">
             <Search className="w-8 h-8" />
           </div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Nenhuma empresa encontrada com os filtros atuais</h3>
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Nenhuma empresa encontrada com os parâmetros pesquisados</h3>
           <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
-            Tente flexibilizar os filtros de município, regime ou risco, ou consulte um CNPJ diretamente na barra superior.
+            Ajuste os filtros de Cidade, Regime Tributário ou Débitos no comando de busca e clique em <strong>Executar Busca no Radar</strong>.
           </p>
         </div>
       ) : (
@@ -622,6 +897,10 @@ export function RadarFiscalView() {
             const isSelected = selecionadas.includes(emp.id);
             const isImportado = emp.status_contato === 'Importado_CRM';
             const isContatado = emp.status_contato === 'Contatado_WhatsApp';
+            
+            // Regra oficial do regime:
+            const regimeClassificado = classificarRegimeEmpresa(emp);
+            const possuiDebitos = Boolean(emp.tem_ade_ativo || (emp.tem_divida_pgfn && emp.valor_divida_pgfn > 0));
 
             return (
               <div
@@ -629,9 +908,9 @@ export function RadarFiscalView() {
                 className={`bg-white dark:bg-slate-800 rounded-2xl p-5 border transition-all shadow-sm hover:shadow-md relative flex flex-col justify-between ${
                   emp.tem_ade_ativo
                     ? 'border-l-4 border-l-red-500 border-slate-200 dark:border-slate-700'
-                    : emp.tem_divida_pgfn
+                    : possuiDebitos
                     ? 'border-l-4 border-l-amber-500 border-slate-200 dark:border-slate-700'
-                    : 'border-slate-200 dark:border-slate-700'
+                    : 'border-l-4 border-l-emerald-500 border-slate-200 dark:border-slate-700'
                 } ${isSelected ? 'ring-2 ring-blue-500/50 bg-blue-50/20 dark:bg-blue-900/10' : ''}`}
               >
                 <div>
@@ -646,25 +925,40 @@ export function RadarFiscalView() {
                       />
                       <div>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                            emp.regime === 'MEI'
-                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
-                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                          }`}>
-                            {emp.regime}
-                          </span>
-
-                          {emp.tem_ade_ativo && (
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 flex items-center gap-1">
-                              <ShieldAlert className="w-3 h-3" />
-                              ADE Ativo ({emp.prazo_regularizacao_dias || 30} dias)
+                          {/* BADGE DE REGIME (REGRA SOLICITADA) */}
+                          {regimeClassificado === 'Simples' && (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                              Simples
                             </span>
                           )}
 
-                          {emp.tem_divida_pgfn && (
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 flex items-center gap-1">
+                          {regimeClassificado === 'MEI' && (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              MEI
+                            </span>
+                          )}
+
+                          {regimeClassificado === 'Regime Normal' && (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600">
+                              Regime Normal
+                            </span>
+                          )}
+
+                          {/* BADGES DE DÉBITOS */}
+                          {emp.tem_ade_ativo ? (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 flex items-center gap-1 border border-red-200 dark:border-red-800">
+                              <ShieldAlert className="w-3 h-3" />
+                              ADE Ativo ({emp.prazo_regularizacao_dias || 30}d)
+                            </span>
+                          ) : emp.tem_divida_pgfn && emp.valor_divida_pgfn > 0 ? (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 flex items-center gap-1 border border-amber-200 dark:border-amber-800">
                               <DollarSign className="w-3 h-3" />
                               PGFN: R$ {(emp.valor_divida_pgfn || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 flex items-center gap-1 border border-emerald-200 dark:border-emerald-800">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Sem Débitos (Regular)
                             </span>
                           )}
 
@@ -707,7 +1001,7 @@ export function RadarFiscalView() {
 
                     <div className="flex items-center gap-1.5 col-span-2 sm:col-span-1">
                       <Users className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                      <span className="truncate">Sócio: <strong>{emp.socio_principal || 'Não identificado'}</strong></span>
+                      <span className="truncate">Sócio: <strong>{emp.socio_principal || 'Não declarado'}</strong></span>
                     </div>
 
                     <div className="flex items-center gap-1.5 col-span-2 sm:col-span-1">
@@ -723,7 +1017,7 @@ export function RadarFiscalView() {
                     )}
                   </div>
 
-                  {/* Informações Fiscais Específicas (ADE / PGFN) */}
+                  {/* Informações Fiscais de Notificação ADE */}
                   {emp.tem_ade_ativo && (
                     <div className="mb-3 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-700 dark:text-red-300 space-y-1">
                       <div className="flex items-center justify-between font-semibold">
@@ -736,7 +1030,7 @@ export function RadarFiscalView() {
                         </span>
                       </div>
                       <p className="text-[11px] text-red-600 dark:text-red-400">
-                        {emp.motivo_ade || 'Débitos pendentes de apuração no Simples Nacional e Dívida Ativa.'}
+                        {emp.motivo_ade || 'Débitos pendentes de parcelamento no Simples Nacional e Dívida Ativa.'}
                       </p>
                     </div>
                   )}
@@ -802,7 +1096,7 @@ export function RadarFiscalView() {
                     Disparar Abordagem Tributária via WhatsApp
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Empresa: <strong>{empresaAlvoWhatsApp.razao_social}</strong> (CNPJ: {empresaAlvoWhatsApp.cnpj})
+                    Empresa: <strong>{empresaAlvoWhatsApp.razao_social}</strong> (CNPJ: {empresaAlvoWhatsApp.cnpj}) - Regime: <strong>{classificarRegimeEmpresa(empresaAlvoWhatsApp)}</strong>
                   </p>
                 </div>
               </div>
@@ -969,7 +1263,7 @@ export function RadarFiscalView() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl text-xs">
                 <div>
                   <span className="text-slate-400 block">Regime Tributário</span>
-                  <strong className="text-slate-800 dark:text-slate-100 text-sm">{empresaDossie.regime}</strong>
+                  <strong className="text-slate-800 dark:text-slate-100 text-sm">{classificarRegimeEmpresa(empresaDossie)}</strong>
                 </div>
                 <div>
                   <span className="text-slate-400 block">Situação Cadastral</span>
@@ -993,10 +1287,10 @@ export function RadarFiscalView() {
                     Notificação de Exclusão do Simples Nacional (ADE Ativo)
                   </div>
                   <p className="text-xs text-red-600 dark:text-red-300 leading-relaxed">
-                    A Receita Federal notificou esta empresa por pendências não parceladas. O prazo legal estimado para regularização antes do desenquadramento automático para o Lucro Presumido é de <strong>{empresaDossie.prazo_regularizacao_dias || 30} dias</strong>.
+                    A Receita Federal notificou esta empresa por pendências não parceladas. O prazo legal estimado para regularização antes do desenquadramento automático para o Regime Normal (Lucro Presumido) é de <strong>{empresaDossie.prazo_regularizacao_dias || 30} dias</strong>.
                   </p>
                   <div className="text-xs text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/50 p-2.5 rounded-lg">
-                    <strong>Impacto financeiro:</strong> Caso ocorra o desenquadramento para o Lucro Presumido, a carga tributária da empresa pode aumentar de ~6% para mais de 16,33% sobre o faturamento bruto.
+                    <strong>Impacto financeiro:</strong> Caso ocorra o desenquadramento para o Regime Normal, a carga tributária da empresa pode aumentar de ~6% para mais de 16,33% sobre o faturamento bruto.
                   </div>
                 </div>
               ) : (

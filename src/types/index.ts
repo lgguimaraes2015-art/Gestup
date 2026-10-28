@@ -398,6 +398,9 @@ export interface CRMLead {
     segmento?: string;
     socios?: { nome: string; qualificacao: string }[];
     possui_debito?: boolean;
+    possui_whatsapp?: boolean;
+    whatsapp_valido?: boolean;
+    whatsapp_verificado_em?: string;
   };
 }
 
@@ -567,6 +570,10 @@ export interface EmpresaRadarFiscal {
   telefone_secundario?: string;
   whatsapp?: string;
   email?: string;
+  whatsapp_valido?: boolean; // true = WhatsApp ativo verificado, false = sem WhatsApp ou número fixo
+  whatsapp_verificado_em?: string; // Data e hora da última validação via Evolution API
+  whatsapp_jid?: string; // JID do WhatsApp (ex: 5519992080639@s.whatsapp.net)
+  whatsapp_nome_perfil?: string; // Nome público do perfil retornado pela API do WhatsApp
   
   // Segmento e Atividade Econômica
   cnae_principal_codigo?: string;
@@ -596,6 +603,7 @@ export interface FiltrosRadarFiscal {
   termoBusca?: string;
   regime: 'todos' | 'simples' | 'mei' | 'normal';
   possuiDebitos: 'todos' | 'com_debitos' | 'sem_debitos';
+  possuiWhatsapp?: 'todos' | 'com_whatsapp' | 'sem_whatsapp';
   statusRisco?: 'todos' | 'ade_ativo' | 'pgfn' | 'regular';
   faixaDebito?: 'todos' | 'ate_10k' | '10k_50k' | '50k_150k' | 'acima_150k';
   segmento?: string;

@@ -30,7 +30,9 @@ import {
   Edit3,
   Eye,
   Clock,
-  RefreshCw
+  RefreshCw,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 interface CRMLeadsViewProps {
@@ -57,6 +59,7 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
     reativarLead,
     colaboradores,
     enviarMensagemWhatsApp,
+    validarWhatsAppNumero,
     empresasRadar,
     setActiveTab
   } = useApp();
@@ -92,6 +95,8 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
   const [feedbackMensagem, setFeedbackMensagem] = useState<string | null>(null);
   const [enviandoMensagem, setEnviandoMensagem] = useState(false);
   const [copiadoFeedback, setCopiadoFeedback] = useState(false);
+  const [validandoNumeroCRM, setValidandoNumeroCRM] = useState(false);
+  const [feedbackNumeroCRM, setFeedbackNumeroCRM] = useState<{ valido: boolean; msg: string } | null>(null);
 
   const leadsAtivos = leads.filter(l => l.estagio !== 'Perdido');
   const leadsBaixados = leads.filter(l => l.estagio === 'Perdido');
@@ -162,8 +167,35 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
     const jaEnviada = isMensagemJaEnviada(lead);
     setStatusAgendamento(jaEnviada ? 'Enviada' : (lead.mensagem_agendada?.status || 'Agendada'));
     setFeedbackMensagem(null);
+    setFeedbackNumeroCRM(
+      lead.dados_fiscais?.whatsapp_valido === true
+        ? { valido: true, msg: '✓ WhatsApp ativo verificado' }
+        : (lead.dados_fiscais?.whatsapp_valido === false ? { valido: false, msg: '⚠️ Contato cadastrado sem WhatsApp (Fixo)' } : null)
+    );
     setAbaVisualizacaoModal(jaEnviada ? 'preview' : 'editor');
     setModalMensagemOpen(true);
+  };
+
+  // Validar número avulso no CRM via Evolution API
+  const handleValidarNumeroCRM = async () => {
+    if (!telefoneDestinoMensagem.trim()) return;
+    setValidandoNumeroCRM(true);
+    setFeedbackNumeroCRM(null);
+
+    const res = await validarWhatsAppNumero(telefoneDestinoMensagem);
+    setValidandoNumeroCRM(false);
+
+    if (res.valido) {
+      setFeedbackNumeroCRM({
+        valido: true,
+        msg: res.nome ? `✓ WhatsApp ativo confirmado! Perfil: ${res.nome}` : `✓ WhatsApp ativo confirmado para este número!`
+      });
+    } else {
+      setFeedbackNumeroCRM({
+        valido: false,
+        msg: `❌ Este número não possui conta WhatsApp ativa (ou é telefone fixo).`
+      });
+    }
   };
 
   // Salvar Alterações na Mensagem do Lead (Permitido estritamente antes do horário de disparo)
@@ -543,6 +575,18 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
                             <span>Sem Débitos</span>
                           </span>
                         )}
+
+                        {/* Indicador de WhatsApp Ativo / Fixo */}
+                        {lead.dados_fiscais?.whatsapp_valido === true ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                            <span>WhatsApp</span>
+                          </span>
+                        ) : lead.dados_fiscais?.whatsapp_valido === false ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400">
+                            Sem WA (Fixo)
+                          </span>
+                        ) : null}
                       </div>
 
                       {/* Contato Principal / Sócio */}
@@ -1109,34 +1153,72 @@ export function CRMLeadsView({ modalOpen, setModalOpen }: CRMLeadsViewProps) {
                   </div>
 
                   {/* Destinatário & Horário Programado */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                        Telefone / WhatsApp de Destino (com DDD):
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        disabled={jaEnviadaModal}
-                        placeholder="Ex: 19992080639"
-                        value={telefoneDestinoMensagem}
-                        onChange={(e) => setTelefoneDestinoMensagem(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-semibold disabled:bg-slate-100 dark:disabled:bg-slate-800/80 disabled:cursor-not-allowed"
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    {leadMensagemAtivo.dados_fiscais?.whatsapp_valido === false && (
+                      <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl flex items-center gap-2 text-[11px] text-amber-900 dark:text-amber-200">
+                        <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                        <span>
+                          <strong>Atenção:</strong> Este contato foi registrado como telefone fixo / sem WhatsApp ativo na consulta pública. Verifique antes de disparar.
+                        </span>
+                      </div>
+                    )}
 
-                    <div>
-                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                        Data e Horário Programado:
-                      </label>
-                      <input
-                        type="text"
-                        disabled={jaEnviadaModal}
-                        placeholder="Ex: 2026-10-29 às 09:00"
-                        value={dataHoraAgendamento}
-                        onChange={(e) => setDataHoraAgendamento(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium disabled:bg-slate-100 dark:disabled:bg-slate-800/80 disabled:cursor-not-allowed"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block font-bold text-slate-700 dark:text-slate-300">
+                            Telefone / WhatsApp de Destino:
+                          </label>
+                          {!jaEnviadaModal && (
+                            <button
+                              type="button"
+                              onClick={handleValidarNumeroCRM}
+                              disabled={validandoNumeroCRM || !telefoneDestinoMensagem.trim()}
+                              className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 flex items-center gap-1 disabled:opacity-50 transition"
+                            >
+                              {validandoNumeroCRM ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-3 h-3" />
+                              )}
+                              <span>{validandoNumeroCRM ? 'Checando...' : 'Checar WhatsApp'}</span>
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          disabled={jaEnviadaModal}
+                          placeholder="Ex: 19992080639"
+                          value={telefoneDestinoMensagem}
+                          onChange={(e) => setTelefoneDestinoMensagem(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-semibold disabled:bg-slate-100 dark:disabled:bg-slate-800/80 disabled:cursor-not-allowed"
+                        />
+                        {feedbackNumeroCRM && (
+                          <div className={`mt-1.5 text-[10px] p-1.5 rounded-lg border font-semibold flex items-center gap-1.5 ${
+                            feedbackNumeroCRM.valido 
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' 
+                              : 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                          }`}>
+                            {feedbackNumeroCRM.valido ? <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-600" />}
+                            <span>{feedbackNumeroCRM.msg}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Data e Horário Programado:
+                        </label>
+                        <input
+                          type="text"
+                          disabled={jaEnviadaModal}
+                          placeholder="Ex: 2026-10-29 às 09:00"
+                          value={dataHoraAgendamento}
+                          onChange={(e) => setDataHoraAgendamento(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium disabled:bg-slate-100 dark:disabled:bg-slate-800/80 disabled:cursor-not-allowed"
+                        />
+                      </div>
                     </div>
                   </div>
 

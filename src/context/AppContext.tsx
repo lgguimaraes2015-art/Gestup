@@ -224,8 +224,11 @@ interface AppContextType {
     municipio: string;
     regime: 'todos' | 'simples' | 'mei' | 'normal';
     possuiDebitos: 'todos' | 'com_debitos' | 'sem_debitos';
+    possuiWhatsapp?: 'todos' | 'com_whatsapp' | 'sem_whatsapp';
     quantidade?: number;
   }) => Promise<{ success: boolean; totalCapturadas: number; novas: EmpresaRadarFiscal[]; error?: string }>;
+  validarWhatsAppEmpresas: (empresaIds: string[]) => Promise<{ validadas: number; comWhatsApp: number; semWhatsApp: number }>;
+  validarWhatsAppNumero: (numero: string) => Promise<{ valido: boolean; jid?: string; nome?: string; numeroFormatado?: string }>;
 
   redefinirDadosPadrao: () => void;
 }
@@ -1911,7 +1914,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       cnae_descricao: emp.cnae_principal_descricao,
       segmento: emp.segmento || emp.cnae_principal_descricao || 'Atividade Geral',
       socios: emp.socios && emp.socios.length > 0 ? emp.socios : (emp.socio_principal ? [{ nome: emp.socio_principal, qualificacao: 'Sócio-Administrador' }] : []),
-      possui_debito: possuiDebitosGerais
+      possui_debito: possuiDebitosGerais,
+      possui_whatsapp: emp.whatsapp_valido !== undefined ? emp.whatsapp_valido : Boolean(emp.whatsapp),
+      whatsapp_valido: emp.whatsapp_valido,
+      whatsapp_verificado_em: emp.whatsapp_verificado_em
     };
 
     let targetLeadId = '';
@@ -2048,6 +2054,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     municipio: string;
     regime: 'todos' | 'simples' | 'mei' | 'normal';
     possuiDebitos: 'todos' | 'com_debitos' | 'sem_debitos';
+    possuiWhatsapp?: 'todos' | 'com_whatsapp' | 'sem_whatsapp';
     quantidade?: number;
   }): Promise<{ success: boolean; totalCapturadas: number; novas: EmpresaRadarFiscal[]; error?: string }> => {
     try {
@@ -2079,6 +2086,122 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       return { success: false, totalCapturadas: 0, novas: [], error: err?.message || 'Falha na conexão' };
     }
+  };
+
+  const validarWhatsAppEmpresas = async (empresaIds: string[]): Promise<{
+    validadas: number;
+    comWhatsApp: number;
+    semWhatsApp: number;
+  }> => {
+    const alvos = empresasRadar.filter(e => empresaIds.includes(e.id));
+    if (alvos.length === 0) return { validadas: 0, comWhatsApp: 0, semWhatsApp: 0 };
+
+    // Extrai números
+    const numerosParaChecar = alvos
+      .map(e => (e.whatsapp || e.telefone || '').replace(/\D/g, ''))
+      .filter(n => n.length >= 8);
+
+    try {
+      const res = await fetch('/api/whatsapp/check-numbers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          numbers: numerosParaChecar,
+          apiUrl: whatsAppConfig.api_url,
+          apiKey: whatsAppConfig.api_key,
+          instanceName: whatsAppConfig.nome_instancia
+        })
+      });
+
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.resultados)) {
+        const mapa = new Map<string, any>();
+        data.resultados.forEach((r: any) => {
+          mapa.set(String(r.raw).replace(/\D/g, ''), r);
+          mapa.set(String(r.number).replace(/\D/g, ''), r);
+        });
+
+        let comWA = 0;
+        let semWA = 0;
+
+        setEmpresasRadar(prev => {
+          const atualizadas = prev.map(emp => {
+            if (!empresaIds.includes(emp.id)) return emp;
+
+            const numZap = (emp.whatsapp || '').replace(/\D/g, '');
+            const numTel = (emp.telefone || '').replace(/\D/g, '');
+            const info = mapa.get(numZap) || mapa.get(numTel);
+
+            if (info) {
+              if (info.exists) comWA++;
+              else semWA++;
+
+              return {
+                ...emp,
+                whatsapp_valido: Boolean(info.exists),
+                whatsapp_jid: info.jid,
+                whatsapp_nome_perfil: info.name,
+                whatsapp_verificado_em: new Date().toLocaleString('pt-BR')
+              };
+            }
+            return emp;
+          });
+
+          try {
+            localStorage.setItem('gestup_v2_radar_fiscal', JSON.stringify(atualizadas));
+          } catch {}
+
+          return atualizadas;
+        });
+
+        return {
+          validadas: alvos.length,
+          comWhatsApp: data.comWhatsApp !== undefined ? data.comWhatsApp : comWA,
+          semWhatsApp: data.semWhatsApp !== undefined ? data.semWhatsApp : semWA
+        };
+      }
+    } catch (err) {
+      console.error('Erro ao validar empresas no WhatsApp:', err);
+    }
+
+    return { validadas: 0, comWhatsApp: 0, semWhatsApp: 0 };
+  };
+
+  const validarWhatsAppNumero = async (numero: string): Promise<{
+    valido: boolean;
+    jid?: string;
+    nome?: string;
+    numeroFormatado?: string;
+  }> => {
+    const clean = String(numero || '').replace(/\D/g, '');
+    if (!clean) return { valido: false };
+
+    try {
+      const res = await fetch('/api/whatsapp/check-numbers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          numbers: [clean],
+          apiUrl: whatsAppConfig.api_url,
+          apiKey: whatsAppConfig.api_key,
+          instanceName: whatsAppConfig.nome_instancia
+        })
+      });
+
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.resultados) && data.resultados.length > 0) {
+        const item = data.resultados[0];
+        return {
+          valido: Boolean(item.exists),
+          jid: item.jid,
+          nome: item.name,
+          numeroFormatado: item.number
+        };
+      }
+    } catch {}
+
+    const isCelular = clean.length === 11 && clean[2] === '9';
+    return { valido: isCelular };
   };
 
   // ================= WHATSAPP =================
@@ -2384,6 +2507,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         consultarCNPJOnline,
         dispararMensagemCaptaçãoWhatsApp,
         capturarNovasEmpresasPublicas,
+        validarWhatsAppEmpresas,
+        validarWhatsAppNumero,
         contasBancarias,
         historicoAjustesSaldo,
         deleteContaPagar,

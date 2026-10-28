@@ -56,6 +56,8 @@ export function RadarFiscalView() {
     consultarCNPJOnline,
     dispararMensagemCaptaçãoWhatsApp,
     capturarNovasEmpresasPublicas,
+    validarWhatsAppEmpresas,
+    validarWhatsAppNumero,
     adicionarEmpresaAoRadar,
     whatsAppConfig,
     setActiveTab
@@ -66,6 +68,7 @@ export function RadarFiscalView() {
   const [buscaMunicipio, setBuscaMunicipio] = useState('Campinas');
   const [buscaRegime, setBuscaRegime] = useState<'todos' | 'simples' | 'mei' | 'normal'>('simples');
   const [buscaDebito, setBuscaDebito] = useState<'todos' | 'com_debitos' | 'sem_debitos'>('com_debitos');
+  const [buscaWhatsapp, setBuscaWhatsapp] = useState<'todos' | 'com_whatsapp' | 'sem_whatsapp'>('todos');
   const [buscaQuantidade, setBuscaQuantidade] = useState<number>(6);
   const [etapaVarreduraTexto, setEtapaVarreduraTexto] = useState<string>('');
 
@@ -73,9 +76,16 @@ export function RadarFiscalView() {
   const [filtroTextoLocal, setFiltroTextoLocal] = useState('');
   const [filtroRegimeLocal, setFiltroRegimeLocal] = useState<'todos' | 'simples' | 'mei' | 'normal'>('todos');
   const [filtroDebitoLocal, setFiltroDebitoLocal] = useState<'todos' | 'com_debitos' | 'sem_debitos'>('todos');
+  const [filtroWhatsappLocal, setFiltroWhatsappLocal] = useState<'todos' | 'com_whatsapp' | 'sem_whatsapp'>('todos');
 
   const [executandoBusca, setExecutandoBusca] = useState(false);
   const [feedbackBusca, setFeedbackBusca] = useState<string | null>(null);
+
+  // Validação de WhatsApp em Lote e Individual
+  const [validandoWhatsApps, setValidandoWhatsApps] = useState(false);
+  const [feedbackValidacaoWhatsApp, setFeedbackValidacaoWhatsApp] = useState<string | null>(null);
+  const [validandoNumeroAvulso, setValidandoNumeroAvulso] = useState(false);
+  const [feedbackNumeroAvulso, setFeedbackNumeroAvulso] = useState<{ valido: boolean; msg: string } | null>(null);
 
   // Seleção em lote
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
@@ -133,10 +143,10 @@ export function RadarFiscalView() {
     setEtapaVarreduraTexto(`2/4: Minerando empresas ativas em ${cidadeAlvo}/${ufAlvo} sob o regime ${buscaRegime.toUpperCase()}...`);
     await new Promise(r => setTimeout(r, 500));
 
-    setEtapaVarreduraTexto(`3/4: Cruzando registros da Dívida Ativa da União e Notificações de ADE...`);
+    setEtapaVarreduraTexto(`3/4: Cruzando registros de débitos e validando existência de contas WhatsApp...`);
     await new Promise(r => setTimeout(r, 450));
 
-    setEtapaVarreduraTexto(`4/4: Extraindo sócios administradores (QSA) e telefones de contato...`);
+    setEtapaVarreduraTexto(`4/4: Extraindo sócios administradores (QSA) e dados de contato...`);
     await new Promise(r => setTimeout(r, 400));
 
     const resultado = await capturarNovasEmpresasPublicas({
@@ -144,6 +154,7 @@ export function RadarFiscalView() {
       municipio: cidadeAlvo,
       regime: buscaRegime,
       possuiDebitos: buscaDebito,
+      possuiWhatsapp: buscaWhatsapp,
       quantidade: buscaQuantidade
     });
 
@@ -163,6 +174,48 @@ export function RadarFiscalView() {
     setFiltroTextoLocal('');
     setFiltroRegimeLocal('todos');
     setFiltroDebitoLocal('todos');
+    setFiltroWhatsappLocal('todos');
+  };
+
+  // Validar em lote todos os WhatsApps exibidos na lista via Evolution API oficial
+  const handleValidarWhatsAppsLista = async () => {
+    if (empresasFiltradas.length === 0) return;
+    setValidandoWhatsApps(true);
+    setFeedbackValidacaoWhatsApp(null);
+
+    const idsParaValidar = selecionadas.length > 0 
+      ? selecionadas 
+      : empresasFiltradas.map(e => e.id);
+
+    const res = await validarWhatsAppEmpresas(idsParaValidar);
+    setValidandoWhatsApps(false);
+
+    setFeedbackValidacaoWhatsApp(
+      `✓ Validação concluída via Evolution API: ${res.comWhatsApp} contatos com WhatsApp ativo e ${res.semWhatsApp} sem WhatsApp / apenas telefone fixo.`
+    );
+    setTimeout(() => setFeedbackValidacaoWhatsApp(null), 6000);
+  };
+
+  // Validar número individual dentro do Modal de Abordagem
+  const handleValidarNumeroModal = async () => {
+    if (!telefoneDestino.trim()) return;
+    setValidandoNumeroAvulso(true);
+    setFeedbackNumeroAvulso(null);
+
+    const res = await validarWhatsAppNumero(telefoneDestino);
+    setValidandoNumeroAvulso(false);
+
+    if (res.valido) {
+      setFeedbackNumeroAvulso({
+        valido: true,
+        msg: res.nome ? `✓ WhatsApp ativo confirmado! Perfil: ${res.nome}` : `✓ WhatsApp ativo confirmado para este número!`
+      });
+    } else {
+      setFeedbackNumeroAvulso({
+        valido: false,
+        msg: `❌ Este número não possui conta WhatsApp ativa (ou é um telefone fixo).`
+      });
+    }
   };
 
   // Lista Filtrada da base do Radar para visualização do usuário
@@ -184,7 +237,12 @@ export function RadarFiscalView() {
       if (filtroDebitoLocal === 'com_debitos' && !possuiDebitos) return false;
       if (filtroDebitoLocal === 'sem_debitos' && possuiDebitos) return false;
 
-      // 3. Filtro Texto Local
+      // 3. Filtro WhatsApp Local
+      const temZap = Boolean(emp.whatsapp_valido === true || (Boolean(emp.whatsapp) && emp.whatsapp_valido !== false));
+      if (filtroWhatsappLocal === 'com_whatsapp' && !temZap) return false;
+      if (filtroWhatsappLocal === 'sem_whatsapp' && temZap) return false;
+
+      // 4. Filtro Texto Local
       if (filtroTextoLocal.trim()) {
         const termo = filtroTextoLocal.toLowerCase().trim();
         const textoCompleto = `${emp.razao_social} ${emp.nome_fantasia || ''} ${emp.cnpj} ${emp.municipio} ${emp.uf} ${emp.socio_principal || ''}`.toLowerCase();
@@ -193,7 +251,7 @@ export function RadarFiscalView() {
 
       return true;
     });
-  }, [empresasRadar, filtroRegimeLocal, filtroDebitoLocal, filtroTextoLocal]);
+  }, [empresasRadar, filtroRegimeLocal, filtroDebitoLocal, filtroWhatsappLocal, filtroTextoLocal]);
 
   // Métricas agregadas da base monitorada
   const metricas = useMemo(() => {
@@ -212,6 +270,10 @@ export function RadarFiscalView() {
     const totalComDebito = empresasRadar.filter(e => e.tem_ade_ativo || (e.tem_divida_pgfn && e.valor_divida_pgfn > 0)).length;
     const totalSemDebito = total - totalComDebito;
 
+    // Métricas por WhatsApp
+    const totalComWhatsapp = empresasRadar.filter(e => e.whatsapp_valido === true || (Boolean(e.whatsapp) && e.whatsapp_valido !== false)).length;
+    const totalSemWhatsapp = total - totalComWhatsapp;
+
     return {
       total,
       comAde,
@@ -222,7 +284,9 @@ export function RadarFiscalView() {
       totalMei,
       totalNormal,
       totalComDebito,
-      totalSemDebito
+      totalSemDebito,
+      totalComWhatsapp,
+      totalSemWhatsapp
     };
   }, [empresasRadar]);
 
@@ -332,6 +396,11 @@ export function RadarFiscalView() {
     if (modelo) {
       setMensagemEditavel(modelo.texto);
     }
+    setFeedbackNumeroAvulso(
+      emp.whatsapp_valido === true 
+        ? { valido: true, msg: '✓ WhatsApp ativo verificado na Evolution API' } 
+        : (emp.whatsapp_valido === false ? { valido: false, msg: '⚠️ Contato cadastrado sem WhatsApp (Telefone Fixo)' } : null)
+    );
     setStatusEnvioFeedback(null);
     setModalWhatsAppOpen(true);
   };
@@ -550,7 +619,7 @@ export function RadarFiscalView() {
         </div>
 
         {/* GRADE DOS FILTROS ESPECÍFICOS DE CAPTAÇÃO PÚBLICA */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
           {/* 1. ESTADO (UF) */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
@@ -643,11 +712,28 @@ export function RadarFiscalView() {
             </select>
           </div>
 
-          {/* 5. QUANTIDADE A CAPTAR */}
+          {/* 5. VALIDAÇÃO WHATSAPP (NOVO FILTRO) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <Phone className="w-3.5 h-3.5 text-emerald-500" />
+              5. Contato WhatsApp
+            </label>
+            <select
+              value={buscaWhatsapp}
+              onChange={(e: any) => setBuscaWhatsapp(e.target.value as any)}
+              className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="todos">Todos (Com e Sem WhatsApp)</option>
+              <option value="com_whatsapp">🟢 Somente com WhatsApp Ativo</option>
+              <option value="sem_whatsapp">⚪ Sem WhatsApp / Telefone Fixo</option>
+            </select>
+          </div>
+
+          {/* 6. QUANTIDADE A CAPTAR */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
               <Users className="w-3.5 h-3.5 text-blue-500" />
-              5. Quantidade
+              6. Quantidade
             </label>
             <select
               value={buscaQuantidade}
@@ -758,6 +844,38 @@ export function RadarFiscalView() {
               <option value="sem_debitos">Sem Débitos</option>
             </select>
 
+            {/* Filtro WhatsApp Local */}
+            <select
+              value={filtroWhatsappLocal}
+              onChange={(e: any) => setFiltroWhatsappLocal(e.target.value)}
+              className="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-700 border-0 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="todos">WhatsApp: Todos ({empresasRadar.length})</option>
+              <option value="com_whatsapp">🟢 Com WhatsApp ({metricas.totalComWhatsapp})</option>
+              <option value="sem_whatsapp">⚪ Sem WhatsApp ({metricas.totalSemWhatsapp})</option>
+            </select>
+
+            {/* Botão de Validação em Lote via Evolution API */}
+            <button
+              type="button"
+              onClick={handleValidarWhatsAppsLista}
+              disabled={validandoWhatsApps || empresasFiltradas.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition shadow-xs whitespace-nowrap"
+              title="Consultar na API oficial do WhatsApp se os números da lista possuem conta ativa"
+            >
+              {validandoWhatsApps ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Validando...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Validar WhatsApps</span>
+                </>
+              )}
+            </button>
+
             {/* Campo de Busca Rápida na Base */}
             <div className="relative">
               <input
@@ -765,12 +883,12 @@ export function RadarFiscalView() {
                 value={filtroTextoLocal}
                 onChange={(e) => setFiltroTextoLocal(e.target.value)}
                 placeholder="Filtrar por nome, CNPJ, cidade..."
-                className="pl-7 pr-3 py-1.5 bg-slate-100 dark:bg-slate-700 border-0 rounded-lg text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-blue-500 w-44 sm:w-56"
+                className="pl-7 pr-3 py-1.5 bg-slate-100 dark:bg-slate-700 border-0 rounded-lg text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-blue-500 w-44 sm:w-52"
               />
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" />
             </div>
 
-            {(filtroRegimeLocal !== 'todos' || filtroDebitoLocal !== 'todos' || filtroTextoLocal) && (
+            {(filtroRegimeLocal !== 'todos' || filtroDebitoLocal !== 'todos' || filtroWhatsappLocal !== 'todos' || filtroTextoLocal) && (
               <button
                 onClick={handleLimparFiltrosLocais}
                 className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
@@ -781,10 +899,26 @@ export function RadarFiscalView() {
             )}
           </div>
         </div>
+
+        {/* FEEDBACK DA VALIDAÇÃO DE WHATSAPP */}
+        {feedbackValidacaoWhatsApp && (
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-xl text-xs text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-2 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span className="font-semibold">{feedbackValidacaoWhatsApp}</span>
+            </div>
+            <button
+              onClick={() => setFeedbackValidacaoWhatsApp(null)}
+              className="text-emerald-700 hover:text-emerald-900"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* CARDS DE INDICADORES RÁPIDOS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Simples</span>
@@ -823,14 +957,26 @@ export function RadarFiscalView() {
 
         <div className="bg-red-50 dark:bg-red-950/30 rounded-xl p-4 border border-red-200 dark:border-red-900/50 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-red-700 dark:text-red-400">Com Débitos / ADE</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-red-700 dark:text-red-400">Com Débitos</span>
             <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
           </div>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-xl sm:text-2xl font-bold text-red-700 dark:text-red-400">{metricas.totalComDebito}</span>
             <span className="text-xs text-red-600/80">alvos prioritários</span>
           </div>
-          <p className="text-[11px] text-red-600/80 mt-0.5">{metricas.comAde} com Notificação de ADE</p>
+          <p className="text-[11px] text-red-600/80 mt-0.5">{metricas.comAde} com ADE Ativo</p>
+        </div>
+
+        <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-xl p-4 border border-emerald-200 dark:border-emerald-900/50 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Com WhatsApp</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-xl sm:text-2xl font-bold text-emerald-800 dark:text-emerald-300">{metricas.totalComWhatsapp}</span>
+            <span className="text-xs text-emerald-600">ativos</span>
+          </div>
+          <p className="text-[11px] text-emerald-600/80 mt-0.5">{metricas.totalSemWhatsapp} sem WhatsApp / fixo</p>
         </div>
       </div>
 
@@ -967,6 +1113,29 @@ export function RadarFiscalView() {
                               💬 Contatado WhatsApp ({emp.mensagens_enviadas_count}x)
                             </span>
                           )}
+
+                          {/* BADGE DE VALIDAÇÃO DO WHATSAPP */}
+                          {emp.whatsapp_valido === true ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1 border border-emerald-200 dark:border-emerald-800" title="Número verificado com conta WhatsApp ativa">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>WhatsApp Ativo</span>
+                            </span>
+                          ) : emp.whatsapp_valido === false || !emp.whatsapp ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 flex items-center gap-1 border border-slate-200 dark:border-slate-700" title="Contato registrado sem WhatsApp ou apenas telefone fixo">
+                              <Phone className="w-3 h-3 text-slate-400" />
+                              <span>Sem WhatsApp (Fixo)</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => validarWhatsAppEmpresas([emp.id])}
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300 flex items-center gap-1 border border-blue-200 dark:border-blue-800 transition"
+                              title="Clique para checar na API se este contato possui WhatsApp ativo"
+                            >
+                              <Search className="w-3 h-3" />
+                              <span>Checar WhatsApp</span>
+                            </button>
+                          )}
                         </div>
 
                         <h4 className="text-base font-bold text-slate-900 dark:text-white mt-1.5 leading-snug">
@@ -999,8 +1168,20 @@ export function RadarFiscalView() {
                     </div>
 
                     <div className="flex items-center gap-1.5 col-span-2 sm:col-span-1">
-                      <Phone className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                      <span>{emp.whatsapp || emp.telefone || 'Sem telefone'}</span>
+                      <Phone className={`w-3.5 h-3.5 flex-shrink-0 ${
+                        emp.whatsapp_valido === true ? 'text-emerald-500' : 'text-slate-400'
+                      }`} />
+                      <span className="font-mono text-xs">{emp.whatsapp || emp.telefone || 'Sem telefone'}</span>
+                      {emp.whatsapp_valido === true && (
+                        <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-200/60">
+                          WA
+                        </span>
+                      )}
+                      {emp.whatsapp_valido === false && (
+                        <span className="text-[9px] font-semibold text-slate-500 bg-slate-200 dark:bg-slate-700 px-1 py-0.2 rounded">
+                          Fixo
+                        </span>
+                      )}
                     </div>
 
                     {emp.segmento && (
@@ -1187,28 +1368,84 @@ export function RadarFiscalView() {
                 )}
               </div>
 
-              {/* Telefone Destino */}
+              {/* Alerta de Contato Fixo ou sem WhatsApp */}
+              {(!empresaAlvoWhatsApp.whatsapp || empresaAlvoWhatsApp.whatsapp_valido === false) && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-2xl text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5 animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Atenção: Número de telefone fixo ou sem WhatsApp cadastrado</p>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5 leading-relaxed">
+                      O contato público da empresa é um telefone fixo ({empresaAlvoWhatsApp.telefone}). O WhatsApp oficial requer um número móvel. Digite o celular com DDD do sócio ({empresaAlvoWhatsApp.socio_principal || 'administrador'}) abaixo e clique em <strong>Checar WhatsApp</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Telefone Destino com Verificador Live */}
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Telefone / WhatsApp de Destino (com DDD):
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Telefone / WhatsApp de Destino (com DDD):
+                  </label>
+                  {empresaAlvoWhatsApp.socio_principal && (
+                    <span className="text-[11px] text-slate-500">
+                      Contato: <strong>{empresaAlvoWhatsApp.socio_principal}</strong>
+                    </span>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                     <input
                       type="text"
                       value={telefoneDestino}
-                      onChange={(e) => setTelefoneDestino(e.target.value)}
+                      onChange={(e) => {
+                        setTelefoneDestino(e.target.value);
+                        setFeedbackNumeroAvulso(null);
+                      }}
                       placeholder="Ex: 19992080639"
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono font-semibold"
                     />
                   </div>
-                  {empresaAlvoWhatsApp.socio_principal && (
-                    <span className="text-xs text-slate-500 hidden sm:inline bg-slate-100 dark:bg-slate-800 px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
-                      👤 {empresaAlvoWhatsApp.socio_principal}
-                    </span>
-                  )}
+
+                  {/* Botão para Validar na Hora se tem WhatsApp */}
+                  <button
+                    type="button"
+                    onClick={handleValidarNumeroModal}
+                    disabled={validandoNumeroAvulso || !telefoneDestino.trim()}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap shadow-2xs disabled:opacity-50"
+                    title="Consultar na API oficial se este número possui conta ativa no WhatsApp"
+                  >
+                    {validandoNumeroAvulso ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Checando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Checar WhatsApp</span>
+                      </>
+                    )}
+                  </button>
                 </div>
+
+                {/* Feedback em tempo real do número */}
+                {feedbackNumeroAvulso && (
+                  <div className={`mt-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 animate-in fade-in ${
+                    feedbackNumeroAvulso.valido 
+                      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60' 
+                      : 'bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60'
+                  }`}>
+                    {feedbackNumeroAvulso.valido ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                    )}
+                    <span>{feedbackNumeroAvulso.msg}</span>
+                  </div>
+                )}
               </div>
 
               {/* Barra de Modelos & Sugerir Texto Padrão */}

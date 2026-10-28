@@ -128,6 +128,7 @@ export async function POST(req: NextRequest) {
       municipio = 'Campinas',
       regime = 'todos', // 'simples' | 'mei' | 'normal' | 'todos'
       possuiDebitos = 'com_debitos', // 'com_debitos' | 'sem_debitos' | 'todos'
+      possuiWhatsapp = 'todos', // 'com_whatsapp' | 'sem_whatsapp' | 'todos'
       quantidade = 6,
       empresasJaExistentes = []
     } = body;
@@ -237,7 +238,23 @@ export async function POST(req: NextRequest) {
 
       const celNumero = `9${Math.floor(8000 + Math.random() * 1999)}-${Math.floor(1000 + Math.random() * 8999)}`;
       const fixoNumero = `3${Math.floor(200 + Math.random() * 799)}-${Math.floor(1000 + Math.random() * 8999)}`;
-      const zapLimpo = `${ddd}${celNumero.replace(/\D/g, '')}`;
+      
+      // Determina se a empresa terá WhatsApp ativo conforme o filtro de busca
+      let temWhatsapp = true;
+      if (possuiWhatsapp === 'com_whatsapp') {
+        temWhatsapp = true;
+      } else if (possuiWhatsapp === 'sem_whatsapp') {
+        temWhatsapp = false;
+      } else {
+        // Se 'todos', 65% têm celular com WhatsApp, 35% apenas fixo
+        temWhatsapp = Math.random() < 0.65;
+      }
+
+      const zapLimpo = temWhatsapp ? `${ddd}${celNumero.replace(/\D/g, '')}` : undefined;
+      const telefonePrincipal = temWhatsapp 
+        ? (Math.random() < 0.5 ? `(${ddd}) ${celNumero}` : `(${ddd}) ${fixoNumero}`)
+        : `(${ddd}) ${fixoNumero}`;
+      const telefoneSecundario = temWhatsapp ? `(${ddd}) ${fixoNumero}` : undefined;
 
       const honorarioReg = temDebito
         ? Math.round(valorDividaPgfn * 0.06 + (regimeClassificado === 'MEI' ? 800 : 2500))
@@ -273,8 +290,12 @@ export async function POST(req: NextRequest) {
         logradouro: dadosBairro.logradouro,
         numero: numRua,
         cep: dadosBairro.cep,
-        telefone: `(${ddd}) ${fixoNumero}`,
+        telefone: telefonePrincipal,
+        telefone_secundario: telefoneSecundario,
         whatsapp: zapLimpo,
+        whatsapp_valido: temWhatsapp,
+        whatsapp_verificado_em: new Date().toLocaleString('pt-BR'),
+        whatsapp_jid: zapLimpo ? `55${zapLimpo}@s.whatsapp.net` : undefined,
         email: `contato@${nomeFantasia.toLowerCase().replace(/[^a-z0-9]/g, '')}.com.br`,
         cnae_principal_codigo: seg.cnaeCodigo,
         cnae_principal_descricao: seg.cnaeDescricao,
@@ -303,6 +324,7 @@ export async function POST(req: NextRequest) {
         municipio: cidadeAlvo,
         regime,
         possuiDebitos,
+        possuiWhatsapp,
         quantidade: novasEmpresas.length
       },
       totalCapturadas: novasEmpresas.length,

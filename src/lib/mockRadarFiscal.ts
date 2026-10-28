@@ -308,7 +308,8 @@ const baseEmpresas: EmpresaRadarFiscal[] = [
     numero: '760',
     cep: '13465-660',
     telefone: '(19) 3406-9900',
-    whatsapp: '19996541122',
+    whatsapp: '',
+    whatsapp_valido: false,
     email: 'adm@fornonobrepizza.com.br',
     cnae_principal_codigo: '56.11-2-01',
     cnae_principal_descricao: 'Restaurantes e similares',
@@ -543,7 +544,8 @@ const baseEmpresas: EmpresaRadarFiscal[] = [
     numero: '820',
     cep: '13025-151',
     telefone: '(19) 3251-4040',
-    whatsapp: '19983441199',
+    whatsapp: '',
+    whatsapp_valido: false,
     email: 'contato@vanguardagestao.com.br',
     cnae_principal_codigo: '70.20-4-00',
     cnae_principal_descricao: 'Atividades de consultoria em gestão empresarial',
@@ -888,7 +890,15 @@ const baseEmpresas: EmpresaRadarFiscal[] = [
   }
 ];
 
-export const initialEmpresasRadar: EmpresaRadarFiscal[] = baseEmpresas.map(emp => ({
-  ...emp,
-  regime: classificarRegimeEmpresa(emp)
-}));
+export const initialEmpresasRadar: EmpresaRadarFiscal[] = baseEmpresas.map(emp => {
+  const zapLimpo = (emp.whatsapp || '').replace(/\D/g, '');
+  const hasCelularZap = zapLimpo.length >= 10 && (zapLimpo.length === 11 ? zapLimpo[2] === '9' : true);
+  const valido = emp.whatsapp_valido !== undefined ? emp.whatsapp_valido : (zapLimpo.length > 0 && hasCelularZap);
+  return {
+    ...emp,
+    regime: classificarRegimeEmpresa(emp),
+    whatsapp_valido: valido,
+    whatsapp_verificado_em: valido ? '28/10/2026 12:00' : undefined,
+    whatsapp_jid: valido && zapLimpo ? `55${zapLimpo}@s.whatsapp.net` : undefined
+  };
+});

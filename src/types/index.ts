@@ -105,7 +105,9 @@ export interface Tarefa {
   tempo_gasto_minutos: number;
   observacoes?: string;
   motivo_atraso?: string;
-  recorrencia_tipo?: 'Mensal' | 'Trimestral' | 'Anual' | 'Única';
+  recorrencia_tipo?: 'Mensal' | 'Trimestral' | 'Anual' | 'Eventual' | 'Única';
+  prazo_finalizacao?: string; // Prazo para finalização quando eventual
+  tipo_execucao?: 'Tarefa' | 'Processo';
   declaracao_id?: string;
   processo_id?: string;
   data_conclusao?: string;
@@ -145,17 +147,28 @@ export interface ConfiguracaoCobrancaEtapa {
   total_envios?: number;
 }
 
+export interface RetornoClienteSubtarefa {
+  id: string;
+  data: string;
+  autor_cliente: string;
+  comentario?: string;
+  arquivos: ArquivoEtapa[];
+}
+
 export interface EtapaProcessoTarefa {
   id: string;
   titulo: string;
   descricao?: string;
+  observacoes?: string;
   ordem: number;
   data_limite: string;
+  responsavel?: string;
   concluida: boolean;
   data_conclusao?: string;
   arquivos: ArquivoEtapa[];
   cobrar_whatsapp: boolean;
   configuracao_cobranca?: ConfiguracaoCobrancaEtapa;
+  retornos_cliente?: RetornoClienteSubtarefa[];
 }
 
 export interface TarefaComentario {
@@ -615,5 +628,40 @@ export interface ModeloMensagemCaptação {
   descricao: string;
   tipo_alvo: 'ADE_SIMPLES' | 'DIVIDA_PGFN' | 'MEI_DAS' | 'PREVENTIVO';
   texto: string;
+}
+
+// ==================== PORTAL DO CLIENTE & GESTÃO DOCUMENTAL ====================
+
+export interface DocumentoPortalCliente {
+  id: string;
+  cliente_id: string; // ID do cliente ou 'todos'
+  cliente_nome?: string;
+  departamento: Departamento;
+  pasta: string; // Ex: 'Extratos & Notas', 'Guias de Tributos', 'Folha de Pagamento', 'Societário & Contratos', 'CNDs & Certidões'
+  nome: string;
+  descricao?: string;
+  arquivo_url: string;
+  arquivo_conteudo?: string; // Base64 / Data URL
+  arquivo_tamanho?: string;
+  visivel_cliente: boolean;
+  competencia?: string;
+  data_vencimento?: string;
+  created_at: string;
+}
+
+export interface SolicitacaoPortalCliente {
+  id: string;
+  cliente_id: string;
+  cliente_nome: string;
+  departamento: Departamento;
+  assunto: string;
+  descricao: string;
+  prioridade: Prioridade;
+  status: 'Pendente' | 'Em Andamento' | 'Concluída' | 'Cancelada';
+  responsavel?: string;
+  resposta_escritorio?: string;
+  arquivos_anexos?: ArquivoEtapa[];
+  created_at: string;
+  updated_at?: string;
 }
 

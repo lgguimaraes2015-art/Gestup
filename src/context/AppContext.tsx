@@ -30,7 +30,10 @@ import {
   HistoricoAjusteSaldo,
   ModeloMensagemTarefa,
   EmpresaRadarFiscal,
-  ModeloMensagemCaptação
+  ModeloMensagemCaptação,
+  DocumentoPortalCliente,
+  SolicitacaoPortalCliente,
+  RetornoClienteSubtarefa
 } from '@/types';
 import {
   initialClientes,
@@ -45,7 +48,9 @@ import {
   initialContasReceber,
   initialHonorarios,
   initialContasBancarias,
-  initialModelosMensagens
+  initialModelosMensagens,
+  initialDocumentosPortal,
+  initialSolicitacoesPortal
 } from '@/lib/mockData';
 import {
   initialModelosCaptação,
@@ -229,6 +234,17 @@ interface AppContextType {
   }) => Promise<{ success: boolean; totalCapturadas: number; novas: EmpresaRadarFiscal[]; error?: string }>;
   validarWhatsAppEmpresas: (empresaIds: string[]) => Promise<{ validadas: number; comWhatsApp: number; semWhatsApp: number }>;
   validarWhatsAppNumero: (numero: string) => Promise<{ valido: boolean; jid?: string; nome?: string; numeroFormatado?: string }>;
+
+  // Portal do Cliente & Gestão Documental por Departamento
+  documentosPortal: DocumentoPortalCliente[];
+  solicitacoesPortal: SolicitacaoPortalCliente[];
+  addDocumentoPortal: (doc: Omit<DocumentoPortalCliente, 'id' | 'created_at'>) => void;
+  updateDocumentoPortal: (id: string, updates: Partial<DocumentoPortalCliente>) => void;
+  deleteDocumentoPortal: (id: string) => void;
+  addSolicitacaoPortal: (sol: Omit<SolicitacaoPortalCliente, 'id' | 'created_at'>) => void;
+  updateSolicitacaoPortal: (id: string, updates: Partial<SolicitacaoPortalCliente>) => void;
+  responderSolicitacaoPortal: (id: string, resposta: string, novoStatus?: 'Em Andamento' | 'Concluída') => void;
+  adicionarRetornoClienteSubtarefa: (tarefaId: string, etapaId: string, retorno: { autor_cliente: string; comentario?: string; arquivos: ArquivoEtapa[] }) => void;
 
   redefinirDadosPadrao: () => void;
 }
@@ -448,6 +464,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [empresasRadar, setEmpresasRadar] = useState<EmpresaRadarFiscal[]>(initialEmpresasRadar);
   const [modelosCaptação, setModelosCaptação] = useState<ModeloMensagemCaptação[]>(initialModelosCaptação);
 
+  // Portal do Cliente (Documentos & Solicitações)
+  const [documentosPortal, setDocumentosPortal] = useState<DocumentoPortalCliente[]>(initialDocumentosPortal);
+  const [solicitacoesPortal, setSolicitacoesPortal] = useState<SolicitacaoPortalCliente[]>(initialSolicitacoesPortal);
+
+  const saveDocumentosPortal = (dados: DocumentoPortalCliente[]) => {
+    setDocumentosPortal(dados);
+    try {
+      localStorage.setItem('gestup_v2_portal_documentos', JSON.stringify(dados));
+    } catch {}
+  };
+
+  const saveSolicitacoesPortal = (dados: SolicitacaoPortalCliente[]) => {
+    setSolicitacoesPortal(dados);
+    try {
+      localStorage.setItem('gestup_v2_portal_solicitacoes', JSON.stringify(dados));
+    } catch {}
+  };
+
   const saveEmpresasRadar = (dados: EmpresaRadarFiscal[]) => {
     setEmpresasRadar(dados);
     try {
@@ -601,6 +635,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const parsed = JSON.parse(savedLeads);
           if (Array.isArray(parsed) && parsed.length > 0) {
             setLeads(parsed);
+          }
+        } catch {}
+      }
+
+      // 9. Documentos e Solicitações do Portal do Cliente
+      const savedDocsPortal = localStorage.getItem('gestup_v2_portal_documentos');
+      if (savedDocsPortal) {
+        try {
+          const parsed = JSON.parse(savedDocsPortal);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setDocumentosPortal(parsed);
+          }
+        } catch {}
+      }
+
+      const savedSolsPortal = localStorage.getItem('gestup_v2_portal_solicitacoes');
+      if (savedSolsPortal) {
+        try {
+          const parsed = JSON.parse(savedSolsPortal);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSolicitacoesPortal(parsed);
           }
         } catch {}
       }
@@ -1243,6 +1298,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .replace(/\{etapa\}/g, etapa.titulo)
       .replace(/\{data_limite\}/g, etapa.data_limite || tarefa.data_prazo_meta);
 
+    // Gera o link de retorno do processo para o cliente comentar ou anexar documentos
+    const baseUrl = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : 'https://gestup.vercel.app';
+    const linkRetornoProcesso = `${baseUrl}/portal/processo?t=${tarefa.id}&e=${etapa.id}`;
+
+    if (!textoMsg.includes('/portal/processo')) {
+      textoMsg += `\n\n🔗 *Acesse o link seguro para anexar documentos ou responder:* \n${linkRetornoProcesso}`;
+    }
+
     cfg.telefones.forEach((tel, idx) => {
       if (tel && tel.trim().length > 6) {
         enviarMensagemWhatsApp(
@@ -1271,6 +1334,97 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return e;
     });
     updateTarefa(tarefaId, { etapas_processo: etapasAtualizadas });
+  };
+
+  // Retorno enviado pelo cliente via link do WhatsApp para a subtarefa
+  const adicionarRetornoClienteSubtarefa = (
+    tarefaId: string,
+    etapaId: string,
+    retorno: { autor_cliente: string; comentario?: string; arquivos: ArquivoEtapa[] }
+  ) => {
+    const agora = new Date().toLocaleString('pt-BR');
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return;
+
+    const novoRetorno: RetornoClienteSubtarefa = {
+      id: `ret-${Date.now()}`,
+      data: agora,
+      autor_cliente: retorno.autor_cliente,
+      comentario: retorno.comentario,
+      arquivos: retorno.arquivos || []
+    };
+
+    const etapasAtualizadas = (tarefa.etapas_processo || []).map(e => {
+      if (e.id === etapaId) {
+        return {
+          ...e,
+          arquivos: [...(e.arquivos || []), ...(retorno.arquivos || [])],
+          retornos_cliente: [...(e.retornos_cliente || []), novoRetorno]
+        };
+      }
+      return e;
+    });
+
+    const detalheRetorno = `📥 Retorno recebido do cliente (${retorno.autor_cliente}) na etapa: ${retorno.comentario ? `"${retorno.comentario}"` : 'Sem comentário adicional.'} ${retorno.arquivos?.length ? `(${retorno.arquivos.length} arquivo(s) anexado(s))` : ''}`;
+
+    const novosComentarios = [
+      ...(tarefa.comentarios_lista || []),
+      {
+        id: `com-${Date.now()}`,
+        autor: `Cliente: ${retorno.autor_cliente}`,
+        data: agora,
+        texto: detalheRetorno
+      }
+    ];
+
+    updateTarefa(tarefaId, {
+      etapas_processo: etapasAtualizadas,
+      comentarios_lista: novosComentarios
+    });
+  };
+
+  // ================= GESTÃO DOCUMENTAL & PORTAL DO CLIENTE =================
+  const addDocumentoPortal = (docData: Omit<DocumentoPortalCliente, 'id' | 'created_at'>) => {
+    const novoDoc: DocumentoPortalCliente = {
+      ...docData,
+      id: `doc-p-${Date.now()}`,
+      created_at: new Date().toISOString().split('T')[0]
+    };
+    saveDocumentosPortal([novoDoc, ...documentosPortal]);
+  };
+
+  const updateDocumentoPortal = (id: string, updates: Partial<DocumentoPortalCliente>) => {
+    const atualizados = documentosPortal.map(d => d.id === id ? { ...d, ...updates } : d);
+    saveDocumentosPortal(atualizados);
+  };
+
+  const deleteDocumentoPortal = (id: string) => {
+    const atualizados = documentosPortal.filter(d => d.id !== id);
+    saveDocumentosPortal(atualizados);
+  };
+
+  const addSolicitacaoPortal = (solData: Omit<SolicitacaoPortalCliente, 'id' | 'created_at'>) => {
+    const novaSol: SolicitacaoPortalCliente = {
+      ...solData,
+      id: `sol-${Date.now()}`,
+      created_at: new Date().toISOString().split('T')[0]
+    };
+    saveSolicitacoesPortal([novaSol, ...solicitacoesPortal]);
+  };
+
+  const updateSolicitacaoPortal = (id: string, updates: Partial<SolicitacaoPortalCliente>) => {
+    const atualizados = solicitacoesPortal.map(s => s.id === id ? { ...s, ...updates, updated_at: new Date().toLocaleString('pt-BR') } : s);
+    saveSolicitacoesPortal(atualizados);
+  };
+
+  const responderSolicitacaoPortal = (id: string, resposta: string, novoStatus: 'Em Andamento' | 'Concluída' = 'Concluída') => {
+    const atualizados = solicitacoesPortal.map(s => s.id === id ? {
+      ...s,
+      resposta_escritorio: resposta,
+      status: novoStatus,
+      updated_at: new Date().toLocaleString('pt-BR')
+    } : s);
+    saveSolicitacoesPortal(atualizados);
   };
 
   // ================= CLIENTES & AUDITORIA =================
@@ -2449,6 +2603,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         removerArquivoEtapa,
         configurarCobrancaWhatsAppEtapa,
         dispararCobrancaEtapaWhatsApp,
+        adicionarRetornoClienteSubtarefa,
+        documentosPortal,
+        solicitacoesPortal,
+        addDocumentoPortal,
+        updateDocumentoPortal,
+        deleteDocumentoPortal,
+        addSolicitacaoPortal,
+        updateSolicitacaoPortal,
+        responderSolicitacaoPortal,
         modelosMensagens,
         salvarModeloMensagem,
         restaurarModelosMensagensPadrao,

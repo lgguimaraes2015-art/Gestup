@@ -170,7 +170,11 @@ export function DeclaracoesView() {
               <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5 font-semibold text-slate-800">
                   <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Vencimento padrão: Todo dia {dec.dia_limite_padrao || 20}</span>
+                  <span>
+                    {dec.periodicidade === 'Eventual'
+                      ? `Prazo para finalização: ${dec.dia_limite_padrao || 30} dias`
+                      : `Vencimento padrão: Todo dia ${dec.dia_limite_padrao || 20}`}
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -269,15 +273,22 @@ export function DeclaracoesView() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Dia Limite Padrão (Prazo Legal)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {periodicidade === 'Eventual' ? 'Prazo para finalização (dias)' : 'Dia Limite Padrão (Prazo Legal)'}
+                  </label>
                   <input
                     type="number"
                     min="1"
-                    max="31"
+                    max={periodicidade === 'Eventual' ? 365 : 31}
                     value={diaLimite}
                     onChange={e => setDiaLimite(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold"
                   />
+                  {periodicidade === 'Eventual' && (
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      Prazo limite em dias corridos para finalização
+                    </span>
+                  )}
                 </div>
 
                 <div>

@@ -150,18 +150,42 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   const [novoEtapaArquivoConteudo, setNovoEtapaArquivoConteudo] = useState<string>('');
   const [novoEtapaArquivoTamanho, setNovoEtapaArquivoTamanho] = useState<string>('');
 
-  // Estados do Formulário de Nova Tarefa
+  // Estados do Formulário de Nova Tarefa / Processo
   const [novoTitulo, setNovoTitulo] = useState('');
   const [novoDescricao, setNovoDescricao] = useState('');
   const [novoClienteId, setNovoClienteId] = useState(clientes[0]?.id || '');
   const [novoResponsavel, setNovoResponsavel] = useState(colaboradores[0]?.nome || '');
   const [novoDepto, setNovoDepto] = useState<Departamento>('Fiscal');
   const [novoPrioridade, setNovoPrioridade] = useState<Prioridade>('Normal');
+  const [novoCompetencia, setNovoCompetencia] = useState(competenciaSelecionada === 'todas' ? '10/2026' : competenciaSelecionada);
+
+  // Recorrência: 'Mensal' | 'Trimestral' | 'Anual' | 'Eventual'
+  const [novoRecorrenciaTipo, setNovoRecorrenciaTipo] = useState<'Mensal' | 'Trimestral' | 'Anual' | 'Eventual'>('Mensal');
+  const [novoDiaLimitePadrao, setNovoDiaLimitePadrao] = useState<number>(20);
   const [novoPrazoMeta, setNovoPrazoMeta] = useState('');
   const [novoPrazoLegal, setNovoPrazoLegal] = useState('');
-  const [novoCompetencia, setNovoCompetencia] = useState(competenciaSelecionada === 'todas' ? '10/2026' : competenciaSelecionada);
-  const [novoTipo, setNovoTipo] = useState<'Recorrente' | 'Avulsa'>('Recorrente');
-  const [novoEhProcesso, setNovoEhProcesso] = useState<boolean>(false);
+  const [novoPrazoFinalizacao, setNovoPrazoFinalizacao] = useState('');
+
+  // Flag: Tarefa vs Processo
+  const [novoTipoExecucao, setNovoTipoExecucao] = useState<'Tarefa' | 'Processo'>('Tarefa');
+
+  // Subtarefas do Processo (Obrigatórias quando novoTipoExecucao === 'Processo')
+  interface SubtarefaDraft {
+    id: string;
+    titulo: string;
+    prazo: string;
+    responsavel: string;
+    cobrar_whatsapp: boolean;
+    frequencia: FrequenciaCobrancaWhatsApp;
+    observacoes: string;
+  }
+  const [subtarefasDraft, setSubtarefasDraft] = useState<SubtarefaDraft[]>([]);
+  const [draftSubTitulo, setDraftSubTitulo] = useState('');
+  const [draftSubPrazo, setDraftSubPrazo] = useState('');
+  const [draftSubResponsavel, setDraftSubResponsavel] = useState(colaboradores[0]?.nome || '');
+  const [draftSubCobrarWA, setDraftSubCobrarWA] = useState(false);
+  const [draftSubFrequencia, setDraftSubFrequencia] = useState<FrequenciaCobrancaWhatsApp>('Diariamente');
+  const [draftSubObservacoes, setDraftSubObservacoes] = useState('');
 
   // Feedbacks visuais
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
@@ -279,68 +303,116 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     setTimeout(() => setFeedbackToast(null), 5000);
   };
 
-  // Salvar Nova Tarefa
+  // Adicionar subtarefa ao rascunho do processo na criação
+  const handleAdicionarSubtarefaDraft = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!draftSubTitulo.trim()) {
+      alert('Informe o nome da subtarefa.');
+      return;
+    }
+    const prazoFinalSub = draftSubPrazo || novoPrazoFinalizacao || novoPrazoLegal || novoPrazoMeta || new Date().toISOString().split('T')[0];
+
+    const nova: SubtarefaDraft = {
+      id: `draft-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      titulo: draftSubTitulo.trim(),
+      prazo: prazoFinalSub,
+      responsavel: draftSubResponsavel || novoResponsavel,
+      cobrar_whatsapp: draftSubCobrarWA,
+      frequencia: draftSubFrequencia,
+      observacoes: draftSubObservacoes.trim()
+    };
+    setSubtarefasDraft(prev => [...prev, nova]);
+    setDraftSubTitulo('');
+    setDraftSubObservacoes('');
+  };
+
+  const handleRemoverSubtarefaDraft = (id: string) => {
+    setSubtarefasDraft(prev => prev.filter(st => st.id !== id));
+  };
+
+  const limparFormNovaTarefa = () => {
+    setNovoTitulo('');
+    setNovoDescricao('');
+    setNovoPrazoMeta('');
+    setNovoPrazoLegal('');
+    setNovoPrazoFinalizacao('');
+    setNovoRecorrenciaTipo('Mensal');
+    setNovoTipoExecucao('Tarefa');
+    setSubtarefasDraft([]);
+    setDraftSubTitulo('');
+    setDraftSubPrazo('');
+    setDraftSubObservacoes('');
+    setDraftSubCobrarWA(false);
+  };
+
+  // Salvar Nova Tarefa ou Processo
   const handleSalvarNovaTarefa = (e: React.FormEvent) => {
     e.preventDefault();
     const cliente = clientes.find(c => c.id === novoClienteId);
-    if (!novoTitulo || !cliente || !novoPrazoMeta) return;
+    if (!novoTitulo.trim() || !cliente) return;
 
-    const etapasIniciais: EtapaProcessoTarefa[] = novoEhProcesso ? [
-      {
-        id: `etp-${Date.now()}-1`,
-        titulo: '1. Solicitação e Coleta de Documentos',
-        descricao: 'Coletar extratos e documentos contábeis com o cliente',
-        ordem: 1,
-        data_limite: novoPrazoMeta,
-        concluida: false,
-        arquivos: [],
-        cobrar_whatsapp: true,
-        configuracao_cobranca: {
-          habilitado: true,
-          telefones: [cliente.whatsapp || cliente.telefone || '19999990000'],
-          mensagem_padrao: `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para finalizarmos no prazo.`,
-          frequencia: 'Diariamente',
-          horario_envio: '08:00'
-        }
-      },
-      {
-        id: `etp-${Date.now()}-2`,
-        titulo: '2. Processamento e Emissão Final',
-        descricao: 'Execução técnica da obrigação fiscal/contábil',
-        ordem: 2,
-        data_limite: novoPrazoLegal || novoPrazoMeta,
-        concluida: false,
-        arquivos: [],
-        cobrar_whatsapp: false
-      }
-    ] : [];
+    const ehProcesso = novoTipoExecucao === 'Processo';
+
+    // REGRA DE OURO: Se for Processo, é OBRIGATÓRIO descrever por subtarefas os passos a passos!
+    if (ehProcesso && subtarefasDraft.length === 0) {
+      alert('⚠️ Para cadastrar um Processo, é obrigatório descrever por subtarefas os passos a passos para executar a tarefa.');
+      return;
+    }
+
+    const prazoFinal = novoRecorrenciaTipo === 'Eventual'
+      ? (novoPrazoFinalizacao || novoPrazoLegal || novoPrazoMeta || new Date().toISOString().split('T')[0])
+      : (novoPrazoLegal || novoPrazoMeta || new Date().toISOString().split('T')[0]);
+
+    if (!prazoFinal) {
+      alert('Por favor, informe a data de prazo.');
+      return;
+    }
+
+    const etapasIniciais: EtapaProcessoTarefa[] = ehProcesso ? subtarefasDraft.map((st, idx) => ({
+      id: `etp-${Date.now()}-${idx + 1}`,
+      titulo: st.titulo,
+      descricao: st.observacoes,
+      observacoes: st.observacoes,
+      ordem: idx + 1,
+      data_limite: st.prazo,
+      responsavel: st.responsavel,
+      concluida: false,
+      arquivos: [],
+      cobrar_whatsapp: st.cobrar_whatsapp,
+      configuracao_cobranca: st.cobrar_whatsapp ? {
+        habilitado: true,
+        telefones: [cliente.whatsapp || cliente.telefone || '19999990000'],
+        mensagem_padrao: `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para finalizarmos no prazo.`,
+        frequencia: st.frequencia,
+        horario_envio: '08:00',
+        total_envios: 0
+      } : undefined
+    })) : [];
 
     addTarefa({
       titulo: novoTitulo,
       descricao: novoDescricao,
-      tipo: novoTipo,
+      tipo: novoRecorrenciaTipo === 'Eventual' ? 'Avulsa' : 'Recorrente',
       status: 'Pendente',
       prioridade: novoPrioridade,
       cliente_id: cliente.id,
       cliente_nome: cliente.nome,
       responsavel: novoResponsavel,
-      data_prazo_meta: novoPrazoMeta,
-      data_prazo_legal: novoPrazoLegal || novoPrazoMeta,
+      data_prazo_meta: novoRecorrenciaTipo === 'Eventual' ? prazoFinal : (novoPrazoMeta || prazoFinal),
+      data_prazo_legal: prazoFinal,
       categoria: novoDepto,
       competencia: novoCompetencia || '10/2026',
       tempo_gasto_minutos: 0,
-      recorrencia_tipo: novoTipo === 'Recorrente' ? 'Mensal' : 'Única',
-      eh_processo: novoEhProcesso,
+      recorrencia_tipo: novoRecorrenciaTipo,
+      prazo_finalizacao: novoRecorrenciaTipo === 'Eventual' ? prazoFinal : undefined,
+      tipo_execucao: novoTipoExecucao,
+      eh_processo: ehProcesso,
       etapas_processo: etapasIniciais
     });
 
     setModalOpen(false);
-    setNovoTitulo('');
-    setNovoDescricao('');
-    setNovoPrazoMeta('');
-    setNovoPrazoLegal('');
-    setNovoEhProcesso(false);
-    setFeedbackToast('✅ Nova tarefa criada com sucesso!');
+    limparFormNovaTarefa();
+    setFeedbackToast(`✅ ${ehProcesso ? 'Processo' : 'Tarefa'} "${novoTitulo}" cadastrado(a) com sucesso!`);
     setTimeout(() => setFeedbackToast(null), 4000);
   };
 
@@ -1709,36 +1781,101 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
         </div>
       )}
 
-      {/* 7. MODAL: NOVA TAREFA */}
+      {/* 7. MODAL: NOVA TAREFA OU PROCESSO */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
-              <h3 className="font-bold text-slate-900 text-sm">Cadastrar Nova Obrigação Fiscal</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-white">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  {novoTipoExecucao === 'Processo' ? (
+                    <>
+                      <Layers className="w-4 h-4 text-indigo-600" />
+                      <span>Cadastrar Novo Processo com Subtarefas</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="w-4 h-4 text-brand-blue" />
+                      <span>Cadastrar Nova Obrigação / Tarefa</span>
+                    </>
+                  )}
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Preencha os dados da obrigação contábil/fiscal e configure regras de execução
+                </p>
+              </div>
               <button
-                onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                onClick={() => {
+                  limparFormNovaTarefa();
+                  setModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSalvarNovaTarefa} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSalvarNovaTarefa} className="p-6 overflow-y-auto space-y-4 text-xs flex-1">
+              {/* CAMPO FLAG: TAREFA OU PROCESSO */}
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/90 space-y-1.5">
+                <label className="block font-bold text-slate-800 text-xs">
+                  Tipo de Execução (Flag) *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNovoTipoExecucao('Tarefa')}
+                    className={`py-2 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                      novoTipoExecucao === 'Tarefa'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span>📌 Tarefa (Fluxo Normal)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNovoTipoExecucao('Processo')}
+                    className={`py-2 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                      novoTipoExecucao === 'Processo'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>🗂️ Processo (Passo a Passo)</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  {novoTipoExecucao === 'Processo'
+                    ? '⚠️ Para processos, é obrigatório detalhar cada passo através de subtarefas antes de salvar.'
+                    : 'Tarefas normais possuem um fluxo simples e direto de execução.'}
+                </p>
+              </div>
+
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Título da Tarefa / Obrigação</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Título {novoTipoExecucao === 'Processo' ? 'do Processo *' : 'da Tarefa / Obrigação *'}
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Transmissão PGDAS-D, Conciliação Bancária..."
+                  placeholder={
+                    novoTipoExecucao === 'Processo'
+                      ? 'Ex: Processo de Fechamento Contábil & Fiscal Mensal, Abertura de Empresa...'
+                      : 'Ex: Transmissão PGDAS-D, Conciliação Bancária...'
+                  }
                   value={novoTitulo}
                   onChange={e => setNovoTitulo(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-blue/20 font-medium"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Cliente</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Cliente *</label>
                   <select
                     value={novoClienteId}
                     onChange={e => setNovoClienteId(e.target.value)}
@@ -1763,78 +1900,114 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* RECORRÊNCIA E PRAZO DINÂMICO (EVENTUAL -> PRAZO PARA FINALIZAÇÃO) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50/70 rounded-2xl border border-slate-200">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Prazo Meta (Interno da Equipe)</label>
-                  <input
-                    type="date"
-                    required
-                    value={novoPrazoMeta}
-                    onChange={e => setNovoPrazoMeta(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-red-600 mb-1">Prazo Legal (Risco de Multa)</label>
-                  <input
-                    type="date"
-                    required
-                    value={novoPrazoLegal}
-                    onChange={e => setNovoPrazoLegal(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-red-200 bg-red-50/20"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Tipo</label>
+                  <label className="block font-bold text-slate-800 mb-1">Recorrência da Obrigação *</label>
                   <select
-                    value={novoTipo}
-                    onChange={e => setNovoTipo(e.target.value as 'Recorrente' | 'Avulsa')}
-                    className="w-full px-2 py-2 rounded-xl border border-slate-200 bg-white"
+                    value={novoRecorrenciaTipo}
+                    onChange={e => setNovoRecorrenciaTipo(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold"
                   >
-                    <option value="Recorrente">Recorrente</option>
-                    <option value="Avulsa">Avulsa</option>
+                    <option value="Mensal">Mensal (Todo Mês)</option>
+                    <option value="Trimestral">Trimestral</option>
+                    <option value="Anual">Anual</option>
+                    <option value="Eventual">📌 Eventual / Pontual</option>
                   </select>
                 </div>
 
+                {/* CAMPO DE PRAZO DINÂMICO */}
+                {novoRecorrenciaTipo === 'Eventual' ? (
+                  <div>
+                    <label className="block font-bold text-indigo-700 mb-1 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Prazo para finalização *</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={novoPrazoFinalizacao}
+                      onChange={e => setNovoPrazoFinalizacao(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border-2 border-indigo-400 bg-indigo-50/30 text-indigo-950 font-bold"
+                    />
+                    <span className="text-[10px] text-indigo-600 font-semibold block mt-0.5">
+                      Obrigação eventual: Data limite para conclusão final.
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1 flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Dia Limite Padrão (Prazo Legal) *</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={novoPrazoLegal}
+                      onChange={e => {
+                        setNovoPrazoLegal(e.target.value);
+                        if (!novoPrazoMeta) setNovoPrazoMeta(e.target.value);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-bold text-slate-900"
+                    />
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      Vencimento padrão legal para risco de multa
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* PRAZO META INTERNO (SE NÃO FOR EVENTUAL) */}
+              {novoRecorrenciaTipo !== 'Eventual' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Prazo Meta (Interno da Equipe)</label>
+                    <input
+                      type="date"
+                      value={novoPrazoMeta}
+                      onChange={e => setNovoPrazoMeta(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Prioridade</label>
+                    <select
+                      value={novoPrioridade}
+                      onChange={e => setNovoPrioridade(e.target.value as Prioridade)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+                    >
+                      <option value="Normal">Normal</option>
+                      <option value="Alta">Alta</option>
+                      <option value="Urgente">Urgente</option>
+                      <option value="Baixa">Baixa</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Departamento</label>
                   <select
                     value={novoDepto}
                     onChange={e => setNovoDepto(e.target.value as Departamento)}
-                    className="w-full px-2 py-2 rounded-xl border border-slate-200 bg-white"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
                   >
                     <option value="Fiscal">Fiscal</option>
                     <option value="Contábil">Contábil</option>
                     <option value="Pessoal">Pessoal / RH</option>
+                    <option value="Societário">Societário</option>
                     <option value="Financeiro">Financeiro / BPO</option>
                     <option value="Outros">Outros</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Prioridade</label>
-                  <select
-                    value={novoPrioridade}
-                    onChange={e => setNovoPrioridade(e.target.value as Prioridade)}
-                    className="w-full px-2 py-2 rounded-xl border border-slate-200 bg-white"
-                  >
-                    <option value="Normal">Normal</option>
-                    <option value="Alta">Alta</option>
-                    <option value="Urgente">Urgente</option>
-                    <option value="Baixa">Baixa</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Responsável</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Responsável Geral</label>
                   <select
                     value={novoResponsavel}
                     onChange={e => setNovoResponsavel(e.target.value)}
-                    className="w-full px-2 py-2 rounded-xl border border-slate-200 bg-white"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium"
                   >
                     {colaboradores.map(col => (
                       <option key={col.id} value={col.nome}>{col.nome}</option>
@@ -1844,50 +2017,245 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Instruções / Descrição</label>
+                <label className="block font-semibold text-slate-700 mb-1">Instruções / Descrição Geral</label>
                 <textarea
                   rows={2}
-                  placeholder="Orientações específicas para o analista responsável..."
+                  placeholder="Orientações e instruções gerais sobre esta obrigação..."
                   value={novoDescricao}
                   onChange={e => setNovoDescricao(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-200"
                 />
               </div>
 
-              {/* CHECK: TRANSFORMAR EM GESTÃO DE PROCESSOS */}
-              <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-2xl">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={novoEhProcesso}
-                    onChange={e => setNovoEhProcesso(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5"
-                  />
-                  <div>
-                    <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                      Transformar em Gestão de Processos (com etapas & régua WhatsApp)
-                    </span>
-                    <span className="text-[11px] text-slate-500 block mt-0.5">
-                      Habilita divisão em etapas, anexos de arquivos por etapa e cobrança automática via WhatsApp às 08:00h da manhã.
+              {/* BLOCO EXCLUSIVO: SUBTAREFAS DO PROCESSO (OBRIGATÓRIO SE FOR PROCESSO) */}
+              {novoTipoExecucao === 'Processo' && (
+                <div className="p-4 bg-indigo-50/60 rounded-2xl border-2 border-indigo-200 space-y-3.5 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-indigo-600" />
+                        <span>Passo a Passo do Processo (Subtarefas Obrigatórias)</span>
+                      </h4>
+                      <p className="text-[10px] text-indigo-800 mt-0.5">
+                        Cadastre cada subtarefa com prazo, responsável e régua de cobrança automática via WhatsApp.
+                      </p>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      subtarefasDraft.length > 0
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
+                    }`}>
+                      {subtarefasDraft.length} subtarefa(s)
                     </span>
                   </div>
-                </label>
-              </div>
+
+                  {/* Form para adicionar subtarefa */}
+                  <div className="p-3 bg-white rounded-xl border border-indigo-100 space-y-2.5">
+                    <span className="text-[11px] font-bold text-slate-800 block">
+                      + Adicionar Nova Subtarefa ao Passo a Passo:
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                          Nome da Subtarefa *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: 1. Coleta e solicitação de extratos OFX"
+                          value={draftSubTitulo}
+                          onChange={e => setDraftSubTitulo(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                          Prazo da Subtarefa *
+                        </label>
+                        <input
+                          type="date"
+                          value={draftSubPrazo}
+                          onChange={e => setDraftSubPrazo(e.target.value)}
+                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                          Responsável pela Subtarefa *
+                        </label>
+                        <select
+                          value={draftSubResponsavel}
+                          onChange={e => setDraftSubResponsavel(e.target.value)}
+                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs bg-white"
+                        >
+                          {colaboradores.map(c => (
+                            <option key={c.id} value={c.nome}>{c.nome}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                          Notificação via WhatsApp? *
+                        </label>
+                        <div className="flex items-center gap-2 pt-1">
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer text-xs font-semibold">
+                            <input
+                              type="radio"
+                              name="draftCobrarWA"
+                              checked={draftSubCobrarWA === true}
+                              onChange={() => setDraftSubCobrarWA(true)}
+                              className="text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span className="text-emerald-700">🟢 Sim (Cobrar Retorno)</span>
+                          </label>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer text-xs font-semibold ml-2">
+                            <input
+                              type="radio"
+                              name="draftCobrarWA"
+                              checked={draftSubCobrarWA === false}
+                              onChange={() => setDraftSubCobrarWA(false)}
+                              className="text-slate-600 focus:ring-slate-500"
+                            />
+                            <span className="text-slate-500">⚪ Não</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SE HOUVER NOTIFICAÇÃO VIA WHATSAPP: PERIODICIDADE */}
+                    {draftSubCobrarWA && (
+                      <div className="p-2.5 bg-emerald-50/80 rounded-lg border border-emerald-200 text-[11px] space-y-1.5 animate-in fade-in">
+                        <div className="flex items-center justify-between">
+                          <label className="font-bold text-emerald-950 flex items-center gap-1">
+                            <MessageSquare className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>Periodicidade da Mensagem "Cobrando" Retorno:</span>
+                          </label>
+                          <span className="text-[10px] text-emerald-800 font-semibold">Disparo matinal às 08:00h</span>
+                        </div>
+                        <select
+                          value={draftSubFrequencia}
+                          onChange={e => setDraftSubFrequencia(e.target.value as FrequenciaCobrancaWhatsApp)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-white font-bold text-emerald-950"
+                        >
+                          <option value="Diariamente">Diariamente (às 08:00h)</option>
+                          <option value="Dia sim, dia não">Dia sim, dia não (às 08:00h)</option>
+                          <option value="Semanalmente (Segundas-feiras)">Semanalmente (Segundas-feiras às 08:00h)</option>
+                          <option value="Quinzenalmente">Quinzenalmente (às 08:00h)</option>
+                        </select>
+                        <p className="text-[10px] text-emerald-800/90 leading-tight">
+                          💡 O cliente receberá um link onde poderá digitar comentários e anexar documentos (PDF ou imagem). O retorno será vinculado automaticamente nesta subtarefa.
+                        </p>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                        Observações da Subtarefa (Instruções específicas)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Verificar conciliação bancária do PicPay e extrato em PDF..."
+                        value={draftSubObservacoes}
+                        onChange={e => setDraftSubObservacoes(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs"
+                      />
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={handleAdicionarSubtarefaDraft}
+                        className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 shadow-2xs transition-all"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Adicionar Subtarefa ao Passo a Passo</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista de subtarefas adicionadas */}
+                  <div className="space-y-2 pt-1">
+                    <span className="text-[11px] font-bold text-indigo-950 block">
+                      Subtarefas Cadastradas no Processo ({subtarefasDraft.length}):
+                    </span>
+
+                    {subtarefasDraft.length === 0 ? (
+                      <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs text-center font-medium">
+                        ⚠️ Nenhuma subtarefa adicionada ainda. Para cadastrar um processo, adicione pelo menos uma subtarefa acima.
+                      </div>
+                    ) : (
+                      subtarefasDraft.map((st, idx) => (
+                        <div
+                          key={st.id}
+                          className="p-2.5 bg-white rounded-xl border border-indigo-100 flex items-start justify-between gap-2 shadow-2xs"
+                        >
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-bold text-[10px] flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </span>
+                              <span className="font-bold text-slate-900 text-xs">{st.titulo}</span>
+                              <span className="px-2 py-0.2 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                Prazo: {st.prazo}
+                              </span>
+                              <span className="px-2 py-0.2 rounded-full text-[9px] font-medium bg-slate-100 text-slate-600">
+                                Resp: {st.responsavel}
+                              </span>
+                              {st.cobrar_whatsapp ? (
+                                <span className="px-2 py-0.2 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                  <Bell className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>WhatsApp ({st.frequencia})</span>
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.2 rounded-full text-[9px] font-medium bg-slate-50 text-slate-400">
+                                  Sem WhatsApp
+                                </span>
+                              )}
+                            </div>
+                            {st.observacoes && (
+                              <p className="text-[11px] text-slate-500 pl-7">{st.observacoes}</p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoverSubtarefaDraft(st.id)}
+                            className="p-1 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50"
+                            title="Remover subtarefa"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    limparFormNovaTarefa();
+                    setModalOpen(false);
+                  }}
                   className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-semibold shadow-sm"
+                  className="px-5 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-bold text-xs shadow-sm flex items-center gap-1.5"
                 >
-                  Criar Tarefa
+                  <Plus className="w-4 h-4" />
+                  <span>
+                    {novoTipoExecucao === 'Processo' ? 'Salvar Processo com Subtarefas' : 'Cadastrar Tarefa'}
+                  </span>
                 </button>
               </div>
             </form>
@@ -2238,6 +2606,14 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                               {etapa.descricao && (
                                 <p className="text-slate-600 text-xs mt-0.5 leading-relaxed">{etapa.descricao}</p>
                               )}
+                              {etapa.observacoes && etapa.observacoes !== etapa.descricao && (
+                                <p className="text-indigo-900/80 text-[11px] mt-0.5 italic">Obs: {etapa.observacoes}</p>
+                              )}
+                              {etapa.responsavel && (
+                                <span className="inline-block mt-1 text-[10px] text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md">
+                                  👤 Responsável: {etapa.responsavel}
+                                </span>
+                              )}
                             </div>
                           </div>
 
@@ -2251,6 +2627,58 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
+
+                        {/* RETORNOS DO CLIENTE (Comentários e Documentos enviados via link WhatsApp) */}
+                        {etapa.retornos_cliente && etapa.retornos_cliente.length > 0 && (
+                          <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/50 border border-blue-200 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-xs text-blue-950 flex items-center gap-1.5">
+                                <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                                <span>Retorno Recebido do Cliente ({etapa.retornos_cliente.length})</span>
+                              </span>
+                              <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                Via Portal Seguro
+                              </span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {etapa.retornos_cliente.map(ret => (
+                                <div key={ret.id} className="p-2.5 bg-white rounded-xl border border-blue-100 text-[11px] space-y-1 shadow-2xs">
+                                  <div className="flex items-center justify-between text-slate-500 text-[10px]">
+                                    <span className="font-bold text-slate-800">👤 {ret.autor_cliente}</span>
+                                    <span>🕒 {ret.data}</span>
+                                  </div>
+                                  {ret.comentario && (
+                                    <p className="text-slate-800 font-medium italic bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                                      &ldquo;{ret.comentario}&rdquo;
+                                    </p>
+                                  )}
+                                  {ret.arquivos && ret.arquivos.length > 0 && (
+                                    <div className="pt-1">
+                                      <span className="text-[10px] font-bold text-slate-600 block mb-1">
+                                        Documentos enviados pelo cliente:
+                                      </span>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {ret.arquivos.map(arq => (
+                                          <a
+                                            key={arq.id}
+                                            href={arq.conteudo || arq.url || '#'}
+                                            download={arq.nome}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-[10px] font-bold flex items-center gap-1 transition"
+                                          >
+                                            <FileText className="w-3 h-3 text-blue-600" />
+                                            <span className="truncate max-w-[150px]">{arq.nome}</span>
+                                          </a>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Linha 2: Arquivos Anexos da Etapa */}
                         <div className="mt-3 pt-3 border-t border-slate-100/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2328,6 +2756,22 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                               </div>
 
                               <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const link = typeof window !== 'undefined'
+                                      ? `${window.location.origin}/portal/processo?t=${tarefaLive.id}&e=${etapa.id}`
+                                      : `https://gestup.vercel.app/portal/processo?t=${tarefaLive.id}&e=${etapa.id}`;
+                                    navigator.clipboard.writeText(link);
+                                    setFeedbackToast('🔗 Link do portal de retorno copiado com sucesso!');
+                                    setTimeout(() => setFeedbackToast(null), 3000);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold transition-all shadow-2xs flex items-center gap-1"
+                                  title="Copiar link para o cliente comentar e anexar arquivos"
+                                >
+                                  <Copy className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>Link p/ Cliente</span>
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => handleAbrirConfiguracaoCobranca(tarefaLive.id, etapa, tarefaLive.cliente_nome)}

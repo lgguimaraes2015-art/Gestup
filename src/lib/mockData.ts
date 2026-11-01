@@ -13,7 +13,9 @@ import {
   ContaReceber,
   ContaBancaria,
   HistoricoAjusteSaldo,
-  ModeloMensagemTarefa
+  ModeloMensagemTarefa,
+  DocumentoPortalCliente,
+  SolicitacaoPortalCliente
 } from '@/types';
 
 export const initialClientes: Cliente[] = [
@@ -4488,5 +4490,161 @@ export const initialContasBancarias: ContaBancaria[] = [
     saldo_atual: 0,
     data_ultimo_ajuste: '2026-10-01',
     observacoes: 'Giro para taxas de junta comercial (JUCESP), certidões e cartório'
+  }
+];
+
+export const initialDocumentosPortal: DocumentoPortalCliente[] = [
+  {
+    id: 'doc-p-1',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Fiscal',
+    pasta: 'Guias de Tributos',
+    nome: 'Guia DAS Simples Nacional - Competência 10/2026',
+    descricao: 'Guia unificada do Simples Nacional com código de barras e PIX para pagamento até 20/11/2026.',
+    arquivo_url: '/portal/guia?id=doc-p-1&arquivo=DAS_10_2026.pdf',
+    arquivo_tamanho: '142 KB',
+    visivel_cliente: true,
+    competencia: '10/2026',
+    data_vencimento: '2026-11-20',
+    created_at: '2026-11-01'
+  },
+  {
+    id: 'doc-p-2',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Fiscal',
+    pasta: 'Declarações Transmitidas',
+    nome: 'Recibo de Transmissão PGDAS-D - 09/2026',
+    descricao: 'Comprovante oficial de entrega da apuração mensal no portal do Simples Nacional.',
+    arquivo_url: '/portal/guia?id=doc-p-2&arquivo=Recibo_PGDAS_09_2026.pdf',
+    arquivo_tamanho: '98 KB',
+    visivel_cliente: true,
+    competencia: '09/2026',
+    created_at: '2026-10-20'
+  },
+  {
+    id: 'doc-p-3',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Pessoal/RH',
+    pasta: 'Folha de Pagamento',
+    nome: 'Folha Analítica & Recibos de Pró-Labore - 10/2026',
+    descricao: 'Demonstrativo mensal de pró-labore dos sócios e resumo de encargos sociais.',
+    arquivo_url: '/portal/guia?id=doc-p-3&arquivo=Folha_Mensal_10_2026.pdf',
+    arquivo_tamanho: '215 KB',
+    visivel_cliente: true,
+    competencia: '10/2026',
+    created_at: '2026-11-01'
+  },
+  {
+    id: 'doc-p-4',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Pessoal/RH',
+    pasta: 'Guias FGTS & INSS',
+    nome: 'Guia DCTFWeb (INSS) - Competência 10/2026',
+    descricao: 'Guia de previdência social sobre pró-labore com vencimento em 20/11/2026.',
+    arquivo_url: '/portal/guia?id=doc-p-4&arquivo=Guia_DCTFWeb_10_2026.pdf',
+    arquivo_tamanho: '110 KB',
+    visivel_cliente: true,
+    competencia: '10/2026',
+    data_vencimento: '2026-11-20',
+    created_at: '2026-11-01'
+  },
+  {
+    id: 'doc-p-5',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Societário',
+    pasta: 'Atos Constitutivos & Contratos',
+    nome: 'Contrato Social Consolidado & Cartão CNPJ',
+    descricao: 'Documento oficial registrado na JUCESP com quadro societário atualizado.',
+    arquivo_url: '/portal/guia?id=doc-p-5&arquivo=Contrato_Social_Consolidado.pdf',
+    arquivo_tamanho: '1.4 MB',
+    visivel_cliente: true,
+    created_at: '2026-06-15'
+  },
+  {
+    id: 'doc-p-6',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Societário',
+    pasta: 'CNDs & Certidões',
+    nome: 'Certidão Negativa de Débitos Federais (RFB/PGFN)',
+    descricao: 'CND conjunta de débitos tributários federais e dívida ativa da união válida.',
+    arquivo_url: '/portal/guia?id=doc-p-6&arquivo=CND_Receita_Federal.pdf',
+    arquivo_tamanho: '85 KB',
+    visivel_cliente: true,
+    created_at: '2026-10-15'
+  },
+  {
+    id: 'doc-p-7',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Contábil',
+    pasta: 'Balancetes & DRE',
+    nome: 'Balancete Contábil & DRE - 3º Trimestre 2026',
+    descricao: 'Demonstração de resultados e posição patrimonial contábil para bancos e fornecedores.',
+    arquivo_url: '/portal/guia?id=doc-p-7&arquivo=Balancete_3T_2026.pdf',
+    arquivo_tamanho: '380 KB',
+    visivel_cliente: true,
+    competencia: '09/2026',
+    created_at: '2026-10-15'
+  },
+  {
+    id: 'doc-p-8',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Financeiro',
+    pasta: 'Relatórios Financeiros',
+    nome: 'Relatório Mensal de Conciliação e Fechamento BPO - 09/2026',
+    descricao: 'Resumo de faturamento, conciliação bancária via PicPay Empresas e contas a pagar.',
+    arquivo_url: '/portal/guia?id=doc-p-8&arquivo=Relatorio_BPO_09_2026.pdf',
+    arquivo_tamanho: '450 KB',
+    visivel_cliente: true,
+    competencia: '09/2026',
+    created_at: '2026-10-05'
+  }
+];
+
+export const initialSolicitacoesPortal: SolicitacaoPortalCliente[] = [
+  {
+    id: 'sol-1',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Fiscal',
+    assunto: 'Segunda via da Guia DAS 09/2026 recalculada',
+    descricao: 'Por favor, enviar a guia atualizada para pagamento até o final desta semana.',
+    prioridade: 'Alta',
+    status: 'Concluída',
+    responsavel: 'Luiz Gustavo',
+    resposta_escritorio: 'Guia atualizada enviada com sucesso no seu WhatsApp e também disponibilizada na pasta Fiscal do seu portal.',
+    created_at: '2026-10-25'
+  },
+  {
+    id: 'sol-2',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Pessoal',
+    assunto: 'Admissão de Colaborador - Vendedor Interno',
+    descricao: 'Gostaria de solicitar a documentação e admissão de um novo colaborador a partir do dia 10 do próximo mês.',
+    prioridade: 'Normal',
+    status: 'Em Andamento',
+    responsavel: 'Equipe DP fin.up',
+    resposta_escritorio: 'Recebemos o pedido! Estamos enviando o checklist com a lista de documentos necessários via WhatsApp.',
+    created_at: '2026-10-28'
+  },
+  {
+    id: 'sol-3',
+    cliente_id: '6a72b5ea245c0f1bc0a404a8',
+    cliente_nome: 'Lucas Bonzanino',
+    departamento: 'Contábil',
+    assunto: 'Declaração de Faturamento dos últimos 12 meses para o banco',
+    descricao: 'Preciso da declaração de faturamento assinada digitalmente com contador para renovar o limite de crédito no banco.',
+    prioridade: 'Urgente',
+    status: 'Pendente',
+    responsavel: 'Luiz Gustavo',
+    created_at: '2026-11-01'
   }
 ];

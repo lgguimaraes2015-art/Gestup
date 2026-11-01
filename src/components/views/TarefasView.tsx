@@ -83,6 +83,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     formatarMensagemGuiaTarefa,
     anexarArquivoTarefa,
     removerArquivoTarefa,
+    gerarTarefasRecorrentesCarteira,
     modelosMensagens
   } = useApp();
 
@@ -510,54 +511,97 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     reader.readAsDataURL(file);
   };
 
-  // Handler de seleção de arquivo da Etapa
-  const handleArquivoEtapaChange = (file: File) => {
-    setNovoArquivoNome(file.name);
-    setNovoEtapaArquivoTamanho(formatarTamanhoBytes(file.size));
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setNovoEtapaArquivoConteudo(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+  // Arquivos em draft para Etapa do Processo
+  const [arquivosEtapaDraft, setArquivosEtapaDraft] = useState<{ nome: string; url: string; conteudo: string; tamanho: string }[]>([]);
+
+  // Handler de seleção de arquivos da Etapa (múltiplos)
+  const handleArquivosEtapaChange = (files: FileList | File[]) => {
+    const fileList = Array.from(files);
+    if (fileList.length === 0) return;
+
+    fileList.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setArquivosEtapaDraft(prev => [
+            ...prev,
+            {
+              nome: file.name,
+              url: reader.result as string,
+              conteudo: reader.result as string,
+              tamanho: formatarTamanhoBytes(file.size)
+            }
+          ]);
+          setNovoArquivoNome(file.name);
+          setNovoEtapaArquivoConteudo(reader.result);
+          setNovoEtapaArquivoTamanho(formatarTamanhoBytes(file.size));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
-  // Handler de seleção de arquivo geral para a Tarefa
-  const handleArquivoGeralTarefaChange = (tarefaId: string, file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        anexarArquivoTarefa(tarefaId, {
-          nome: file.name,
-          tamanho: formatarTamanhoBytes(file.size),
-          url: reader.result,
-          conteudo: reader.result
-        });
-        setFeedbackToast(`📎 Arquivo "${file.name}" anexado à tarefa com sucesso!`);
-        setTimeout(() => setFeedbackToast(null), 3000);
-      }
-    };
-    reader.readAsDataURL(file);
+  // Handler de seleção de arquivos gerais para a Tarefa (múltiplos)
+  const handleArquivosGeraisTarefaChange = (tarefaId: string, files: FileList | File[]) => {
+    const fileList = Array.from(files);
+    if (fileList.length === 0) return;
+
+    let processados = 0;
+    fileList.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          anexarArquivoTarefa(tarefaId, {
+            nome: file.name,
+            tamanho: formatarTamanhoBytes(file.size),
+            url: reader.result,
+            conteudo: reader.result
+          });
+          processados++;
+          if (processados === fileList.length) {
+            setFeedbackToast(`📎 ${processados} arquivo(s) anexado(s) à tarefa com sucesso!`);
+            setTimeout(() => setFeedbackToast(null), 3000);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
-  // Salvar anexo real na etapa do processo
+  // Salvar anexos na etapa do processo (suporta múltiplos)
   const handleSalvarAnexoEtapa = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modalAnexoEtapa || !novoArquivoNome) return;
-    const nomeFormatado = novoArquivoNome.includes('.') ? novoArquivoNome : `${novoArquivoNome}.pdf`;
-    anexarArquivoEtapa(modalAnexoEtapa.tarefaId, modalAnexoEtapa.etapaId, {
-      nome: nomeFormatado,
-      url: novoEtapaArquivoConteudo || '#',
-      tamanho: novoEtapaArquivoTamanho || '1.2 MB',
-      conteudo: novoEtapaArquivoConteudo || undefined
-    });
+    if (!modalAnexoEtapa) return;
+
+    if (arquivosEtapaDraft.length > 0) {
+      arquivosEtapaDraft.forEach(arq => {
+        anexarArquivoEtapa(modalAnexoEtapa.tarefaId, modalAnexoEtapa.etapaId, {
+          nome: arq.nome,
+          url: arq.url,
+          tamanho: arq.tamanho,
+          conteudo: arq.conteudo
+        });
+      });
+      setFeedbackToast(`📎 ${arquivosEtapaDraft.length} arquivo(s) anexado(s) à etapa com sucesso!`);
+    } else if (novoArquivoNome) {
+      const nomeFormatado = novoArquivoNome.includes('.') ? novoArquivoNome : `${novoArquivoNome}.pdf`;
+      anexarArquivoEtapa(modalAnexoEtapa.tarefaId, modalAnexoEtapa.etapaId, {
+        nome: nomeFormatado,
+        url: novoEtapaArquivoConteudo || '#',
+        tamanho: novoEtapaArquivoTamanho || '1.2 MB',
+        conteudo: novoEtapaArquivoConteudo || undefined
+      });
+      setFeedbackToast('📎 Arquivo anexado à etapa com sucesso!');
+    } else {
+      return;
+    }
+
     setModalAnexoEtapa(null);
+    setArquivosEtapaDraft([]);
     setNovoArquivoNome('');
     setNovoEtapaArquivoConteudo('');
     setNovoEtapaArquivoTamanho('');
     if (etapaFileInputRef.current) etapaFileInputRef.current.value = '';
-    setFeedbackToast('📎 Arquivo anexado à etapa com sucesso!');
     setTimeout(() => setFeedbackToast(null), 3000);
   };
 
@@ -786,6 +830,24 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
               <span>Gerar Próxima Competência</span>
             </button>
           )}
+
+          <button
+            onClick={() => {
+              const comp = competenciaSelecionada === 'todas' ? '10/2026' : competenciaSelecionada;
+              const res = gerarTarefasRecorrentesCarteira(comp);
+              if (res.totalCriadas > 0) {
+                setFeedbackToast(`⚡ ${res.totalCriadas} tarefa(s) gerada(s) da carteira de empresas para ${comp}!`);
+              } else {
+                setFeedbackToast(`ℹ️ Todas as tarefas das empresas já estão lançadas para ${comp}.`);
+              }
+              setTimeout(() => setFeedbackToast(null), 4000);
+            }}
+            title="Gera automaticamente todas as obrigações cadastradas em cada empresa para esta competência"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-semibold transition-all shadow-sm"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+            <span>Gerar Tarefas da Carteira</span>
+          </button>
         </div>
       </div>
 
@@ -1816,6 +1878,18 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
             </div>
 
             <form onSubmit={handleSalvarNovaTarefa} className="p-6 overflow-y-auto space-y-4 text-xs flex-1">
+              {/* ALERTA DE DIRETRIZ: TAREFAS RECORRENTES VS EXCEPCIONAIS */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-800">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Tarefas da Carteira vs. Tarefas Excepcionais:</p>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    As tarefas recorrentes de cada empresa são geradas a partir do <strong>Cadastro do Cliente (Menu Clientes)</strong>. 
+                    Utilize este modal apenas para incluir <strong>tarefas ou processos novos excepcionais</strong>.
+                  </p>
+                </div>
+              </div>
+
               {/* CAMPO FLAG: TAREFA OU PROCESSO */}
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/90 space-y-1.5">
                 <label className="block font-bold text-slate-800 text-xs">
@@ -2437,13 +2511,15 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                       <span>Documentos & Anexos da Tarefa ({((tarefaLive.arquivos_anexos?.length || 0) + (tarefaLive.guia_pagamento ? 1 : 0))})</span>
                     </h4>
 
-                    {/* Input real para anexar arquivo diretamente à tarefa */}
+                    {/* Input real para anexar múltiplos arquivos diretamente à tarefa */}
                     <input
                       type="file"
+                      multiple
                       ref={tarefaGeralFileInputRef}
                       onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) handleArquivoGeralTarefaChange(tarefaLive.id, file);
+                        const files = e.target.files;
+                        if (files && files.length > 0) handleArquivosGeraisTarefaChange(tarefaLive.id, files);
+                        e.target.value = '';
                       }}
                       className="hidden"
                     />
@@ -2454,7 +2530,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                       className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-2xs transition-all"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Anexar Arquivo à Tarefa</span>
+                      <span>Anexar Arquivos à Tarefa</span>
                     </button>
                   </div>
 
@@ -3150,10 +3226,11 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                 </label>
                 <input
                   type="file"
+                  multiple
                   ref={etapaFileInputRef}
                   onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) handleArquivoEtapaChange(file);
+                    const files = e.target.files;
+                    if (files && files.length > 0) handleArquivosEtapaChange(files);
                   }}
                   className="hidden"
                 />

@@ -48,6 +48,47 @@ export interface HistoricoClienteItem {
   descricao: string;
 }
 
+export interface CredenciaisPortalCliente {
+  email: string;
+  senha: string;
+  ativo: boolean;
+  ultimo_acesso?: string;
+}
+
+export type TipoDocumentoLegal =
+  | 'Contrato Social / Requerimento'
+  | 'Inscrição Municipal (CCM)'
+  | 'Inscrição Estadual (CADESP)'
+  | 'Cartão CNPJ'
+  | 'Alvará de Funcionamento'
+  | 'Certificado Digital'
+  | 'Procuração RFB / e-CAC'
+  | 'Outros';
+
+export interface DocumentoLegalCliente {
+  id: string;
+  tipo: TipoDocumentoLegal;
+  nome: string;
+  descricao?: string;
+  arquivo_url: string;
+  arquivo_conteudo?: string;
+  arquivo_tamanho?: string;
+  data_upload: string;
+}
+
+export interface TarefaEmpresaConfig {
+  id: string;
+  titulo: string;
+  departamento: Departamento;
+  periodicidade: Periodicidade;
+  dia_limite: number;
+  eh_processo?: boolean;
+  etapas_padrao?: { titulo: string; ordem: number; cobrar_whatsapp?: boolean }[];
+  ativo: boolean;
+  declaracao_id?: string;
+  observacoes?: string;
+}
+
 export interface Cliente {
   id: string;
   nome: string;
@@ -72,6 +113,9 @@ export interface Cliente {
   contrato_assinado?: boolean;
   declaracoes_vinculadas?: DeclaracaoVinculadaCliente[];
   historico_alteracoes?: HistoricoClienteItem[];
+  portal_acesso?: CredenciaisPortalCliente;
+  documentos_legais?: DocumentoLegalCliente[];
+  tarefas_empresa?: TarefaEmpresaConfig[];
   created_at: string;
 }
 

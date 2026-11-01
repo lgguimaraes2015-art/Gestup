@@ -33,7 +33,11 @@ import {
   ModeloMensagemCaptação,
   DocumentoPortalCliente,
   SolicitacaoPortalCliente,
-  RetornoClienteSubtarefa
+  RetornoClienteSubtarefa,
+  CredenciaisPortalCliente,
+  TipoDocumentoLegal,
+  DocumentoLegalCliente,
+  TarefaEmpresaConfig
 } from '@/types';
 import {
   initialClientes,
@@ -246,14 +250,210 @@ interface AppContextType {
   responderSolicitacaoPortal: (id: string, resposta: string, novoStatus?: 'Em Andamento' | 'Concluída') => void;
   adicionarRetornoClienteSubtarefa: (tarefaId: string, etapaId: string, retorno: { autor_cliente: string; comentario?: string; arquivos: ArquivoEtapa[] }) => void;
 
+  // Gestão de Tarefas Recorrentes por Empresa & Documentos Legais
+  adicionarTarefaEmpresa: (clienteId: string, config: Omit<TarefaEmpresaConfig, 'id'>) => void;
+  removerTarefaEmpresa: (clienteId: string, tarefaConfigId: string) => void;
+  atualizarTarefaEmpresa: (clienteId: string, tarefaConfigId: string, updates: Partial<TarefaEmpresaConfig>) => void;
+  sugerirTarefasPorRegime: (clienteId: string) => void;
+  gerarTarefasRecorrentesCarteira: (competencia?: string) => { totalCriadas: number; detalhes: string[] };
+  adicionarDocumentoLegalCliente: (clienteId: string, doc: Omit<DocumentoLegalCliente, 'id' | 'data_upload'>) => void;
+  removerDocumentoLegalCliente: (clienteId: string, docId: string) => void;
+  atualizarAcessoPortalCliente: (clienteId: string, credenciais: CredenciaisPortalCliente) => void;
+
   redefinirDadosPadrao: () => void;
 }
+
+export const getTarefasPadraoPorRegime = (regime: string, clienteId: string): TarefaEmpresaConfig[] => {
+  if (regime === 'MEI') {
+    return [
+      {
+        id: `t-cfg-mei-1-${clienteId}`,
+        titulo: 'DAS-MEI / Guia Mensal do MEI',
+        departamento: 'Fiscal',
+        periodicidade: 'Mensal',
+        dia_limite: 20,
+        eh_processo: false,
+        ativo: true
+      },
+      {
+        id: `t-cfg-mei-2-${clienteId}`,
+        titulo: 'Relatório Mensal das Receitas Brutas',
+        departamento: 'Contábil',
+        periodicidade: 'Mensal',
+        dia_limite: 20,
+        eh_processo: false,
+        ativo: true
+      },
+      {
+        id: `t-cfg-mei-3-${clienteId}`,
+        titulo: 'DASN-SIMEI / Declaração Anual Simplificada',
+        departamento: 'Fiscal',
+        periodicidade: 'Anual',
+        dia_limite: 31,
+        eh_processo: false,
+        ativo: true
+      }
+    ];
+  }
+
+  if (regime === 'Simples Nacional' || regime === 'Simples') {
+    return [
+      {
+        id: `t-cfg-sn-1-${clienteId}`,
+        titulo: 'PGDAS-D / Apuração do Simples Nacional',
+        departamento: 'Fiscal',
+        periodicidade: 'Mensal',
+        dia_limite: 20,
+        eh_processo: false,
+        ativo: true
+      },
+      {
+        id: `t-cfg-sn-2-${clienteId}`,
+        titulo: 'DCTFWeb Previdenciária & INSS',
+        departamento: 'Fiscal',
+        periodicidade: 'Mensal',
+        dia_limite: 15,
+        eh_processo: false,
+        ativo: true
+      },
+      {
+        id: `t-cfg-sn-3-${clienteId}`,
+        titulo: 'Folha de Pagamento & Pró-Labore',
+        departamento: 'Pessoal',
+        periodicidade: 'Mensal',
+        dia_limite: 5,
+        eh_processo: true,
+        etapas_padrao: [
+          { titulo: 'Coleta de variáveis e ponto dos funcionários', ordem: 1, cobrar_whatsapp: true },
+          { titulo: 'Cálculo da Folha e emissão de recibos', ordem: 2, cobrar_whatsapp: false },
+          { titulo: 'Geração de guias FGTS Digital e envio ao cliente', ordem: 3, cobrar_whatsapp: true }
+        ],
+        ativo: true
+      },
+      {
+        id: `t-cfg-sn-4-${clienteId}`,
+        titulo: 'Conciliação e Fechamento Contábil Mensal',
+        departamento: 'Contábil',
+        periodicidade: 'Mensal',
+        dia_limite: 25,
+        eh_processo: false,
+        ativo: true
+      },
+      {
+        id: `t-cfg-sn-5-${clienteId}`,
+        titulo: 'DEFIS / Declaração de Informações Socioeconômicas',
+        departamento: 'Fiscal',
+        periodicidade: 'Anual',
+        dia_limite: 31,
+        eh_processo: false,
+        ativo: true
+      }
+    ];
+  }
+
+  // Lucro Presumido / Real / Outros
+  return [
+    {
+      id: `t-cfg-lp-1-${clienteId}`,
+      titulo: 'EFD-Contribuições (PIS/COFINS)',
+      departamento: 'Fiscal',
+      periodicidade: 'Mensal',
+      dia_limite: 15,
+      eh_processo: false,
+      ativo: true
+    },
+    {
+      id: `t-cfg-lp-2-${clienteId}`,
+      titulo: 'EFD ICMS/IPI (SPED Fiscal)',
+      departamento: 'Fiscal',
+      periodicidade: 'Mensal',
+      dia_limite: 20,
+      eh_processo: false,
+      ativo: true
+    },
+    {
+      id: `t-cfg-lp-3-${clienteId}`,
+      titulo: 'DCTF Mensal / Apuração de Tributos Federais',
+      departamento: 'Fiscal',
+      periodicidade: 'Mensal',
+      dia_limite: 15,
+      eh_processo: false,
+      ativo: true
+    },
+    {
+      id: `t-cfg-lp-4-${clienteId}`,
+      titulo: 'Folha de Pagamento, Pró-Labore & eSocial',
+      departamento: 'Pessoal',
+      periodicidade: 'Mensal',
+      dia_limite: 5,
+      eh_processo: true,
+      etapas_padrao: [
+        { titulo: 'Coleta de movimentações trabalhistas', ordem: 1, cobrar_whatsapp: true },
+        { titulo: 'Processamento eSocial & DCTFWeb', ordem: 2, cobrar_whatsapp: false },
+        { titulo: 'Emissão e envio de holerites e guias', ordem: 3, cobrar_whatsapp: true }
+      ],
+      ativo: true
+    },
+    {
+      id: `t-cfg-lp-5-${clienteId}`,
+      titulo: 'Escrituração Contábil Digital (ECD)',
+      departamento: 'Contábil',
+      periodicidade: 'Anual',
+      dia_limite: 31,
+      eh_processo: false,
+      ativo: true
+    }
+  ];
+};
 
 const enrichCliente = (c: Cliente): Cliente => ({
   ...c,
   receber_guias_whatsapp: c.receber_guias_whatsapp ?? true,
   data_inicio_contrato: c.data_inicio_contrato || c.data_contrato || '2026-01-15',
   data_renovacao_contrato: c.data_renovacao_contrato || '2027-01-15',
+  portal_acesso: c.portal_acesso || {
+    email: c.email || `${c.nome.toLowerCase().replace(/[^a-z0-9]/g, '') || 'contato'}@empresa.com.br`,
+    senha: 'finup123',
+    ativo: true,
+    ultimo_acesso: '2026-10-30 14:22'
+  },
+  documentos_legais: (c.documentos_legais && c.documentos_legais.length > 0) ? c.documentos_legais : [
+    {
+      id: `doc-leg-1-${c.id}`,
+      tipo: 'Cartão CNPJ',
+      nome: `Cartão CNPJ - ${c.nome}.pdf`,
+      arquivo_url: `/docs/cartao_cnpj_${c.id}.pdf`,
+      arquivo_tamanho: '240 KB',
+      data_upload: '2026-08-01'
+    },
+    {
+      id: `doc-leg-2-${c.id}`,
+      tipo: 'Contrato Social / Requerimento',
+      nome: `Contrato Social Consolidado - ${c.nome}.pdf`,
+      arquivo_url: `/docs/contrato_social_${c.id}.pdf`,
+      arquivo_tamanho: '1.2 MB',
+      data_upload: '2026-08-01'
+    },
+    {
+      id: `doc-leg-3-${c.id}`,
+      tipo: 'Inscrição Municipal (CCM)',
+      nome: `Ficha de Inscrição Municipal - CCM.pdf`,
+      arquivo_url: `/docs/inscricao_municipal_${c.id}.pdf`,
+      arquivo_tamanho: '180 KB',
+      data_upload: '2026-08-01'
+    },
+    ...(c.regime_tributario !== 'MEI' ? [
+      {
+        id: `doc-leg-4-${c.id}`,
+        tipo: 'Inscrição Estadual (CADESP)' as const,
+        nome: `Comprovante de Inscrição Estadual CADESP.pdf`,
+        arquivo_url: `/docs/inscricao_estadual_${c.id}.pdf`,
+        arquivo_tamanho: '310 KB',
+        data_upload: '2026-08-01'
+      }
+    ] : [])
+  ],
+  tarefas_empresa: (c.tarefas_empresa && c.tarefas_empresa.length > 0) ? c.tarefas_empresa : getTarefasPadraoPorRegime(c.regime_tributario, c.id),
   contatos_notificacao: (c.contatos_notificacao && c.contatos_notificacao.length > 0) ? c.contatos_notificacao : [
     {
       id: `ct-princ-${c.id}`,
@@ -1616,6 +1816,153 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateCliente(clienteId, { declaracoes_vinculadas: lista }, `Desvinculada obrigação fiscal do contrato.`);
   };
 
+  // ================= TAREFAS RECORRENTES DA EMPRESA & DOCUMENTOS LEGAIS =================
+  const adicionarTarefaEmpresa = (clienteId: string, config: Omit<TarefaEmpresaConfig, 'id'>) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+    const nova: TarefaEmpresaConfig = {
+      ...config,
+      id: `t-cfg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+    };
+    const lista = cliente.tarefas_empresa || [];
+    updateCliente(clienteId, { tarefas_empresa: [...lista, nova] }, `Adicionada obrigação da empresa: ${config.titulo} (${config.departamento} - Dia ${config.dia_limite}).`);
+  };
+
+  const removerTarefaEmpresa = (clienteId: string, tarefaConfigId: string) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+    const lista = (cliente.tarefas_empresa || []).filter(t => t.id !== tarefaConfigId);
+    updateCliente(clienteId, { tarefas_empresa: lista }, `Removida obrigação da carteira da empresa.`);
+  };
+
+  const atualizarTarefaEmpresa = (clienteId: string, tarefaConfigId: string, updates: Partial<TarefaEmpresaConfig>) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+    const lista = (cliente.tarefas_empresa || []).map(t => t.id === tarefaConfigId ? { ...t, ...updates } : t);
+    updateCliente(clienteId, { tarefas_empresa: lista }, `Configuração de obrigação da empresa atualizada.`);
+  };
+
+  const sugerirTarefasPorRegime = (clienteId: string) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+    const sugeridas = getTarefasPadraoPorRegime(cliente.regime_tributario, cliente.id);
+    updateCliente(clienteId, { tarefas_empresa: sugeridas }, `Carregadas obrigações padrão para o regime ${cliente.regime_tributario}.`);
+  };
+
+  const gerarTarefasRecorrentesCarteira = (competenciaAlvo: string = '10/2026') => {
+    let criadas = 0;
+    const detalhes: string[] = [];
+    const novasTarefas: Tarefa[] = [];
+
+    const [mesStr, anoStr] = competenciaAlvo.split('/');
+    const mesNum = parseInt(mesStr, 10) || 10;
+    const anoNum = parseInt(anoStr, 10) || 2026;
+
+    clientes.filter(c => c.status === 'Ativo').forEach(cliente => {
+      const tarefasConfig = (cliente.tarefas_empresa && cliente.tarefas_empresa.length > 0)
+        ? cliente.tarefas_empresa.filter(t => t.ativo !== false)
+        : getTarefasPadraoPorRegime(cliente.regime_tributario, cliente.id);
+
+      tarefasConfig.forEach(cfg => {
+        // Verifica se já existe para esta empresa, título e competência
+        const jaExiste = tarefas.some(
+          t => t.cliente_id === cliente.id &&
+               t.competencia === competenciaAlvo &&
+               t.titulo.trim().toLowerCase() === cfg.titulo.trim().toLowerCase()
+        ) || novasTarefas.some(
+          t => t.cliente_id === cliente.id &&
+               t.competencia === competenciaAlvo &&
+               t.titulo.trim().toLowerCase() === cfg.titulo.trim().toLowerCase()
+        );
+
+        if (!jaExiste) {
+          if (cfg.periodicidade === 'Anual' && mesNum !== 3 && mesNum !== 5 && mesNum !== 12) {
+            return;
+          }
+
+          const diaVenc = Math.min(Math.max(1, cfg.dia_limite || 20), 28);
+          const diaMeta = Math.max(1, diaVenc - 3);
+          const dataPrazoLegal = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaVenc).padStart(2, '0')}`;
+          const dataPrazoMeta = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaMeta).padStart(2, '0')}`;
+
+          const etapas = cfg.eh_processo && cfg.etapas_padrao
+            ? cfg.etapas_padrao.map((ep, idx) => ({
+                id: `ep-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+                titulo: ep.titulo,
+                ordem: ep.ordem || (idx + 1),
+                data_limite: dataPrazoLegal,
+                concluida: false,
+                arquivos: [],
+                cobrar_whatsapp: !!ep.cobrar_whatsapp,
+                configuracao_cobranca: ep.cobrar_whatsapp ? {
+                  habilitado: true,
+                  telefones: [cliente.whatsapp || cliente.telefone || '19992080639'],
+                  mensagem_padrao: `Olá *${cliente.nome}*, precisamos do seu retorno sobre a etapa *${ep.titulo}* referente a ${competenciaAlvo}.`,
+                  frequencia: 'Diariamente' as const,
+                  horario_envio: '08:00'
+                } : undefined
+              }))
+            : undefined;
+
+          novasTarefas.push({
+            id: `tar-rec-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            titulo: cfg.titulo,
+            descricao: `Obrigação recorrente gerada a partir da carteira da empresa ${cliente.nome}`,
+            tipo: 'Recorrente',
+            status: 'Pendente',
+            prioridade: 'Normal',
+            cliente_id: cliente.id,
+            cliente_nome: cliente.nome,
+            responsavel: cliente.responsavel || 'Guilherme',
+            data_prazo_meta: dataPrazoMeta,
+            data_prazo_legal: dataPrazoLegal,
+            categoria: cfg.departamento,
+            competencia: competenciaAlvo,
+            tempo_gasto_minutos: 0,
+            recorrencia_tipo: cfg.periodicidade === 'Eventual' ? 'Eventual' : (cfg.periodicidade === 'Anual' ? 'Anual' : 'Mensal'),
+            eh_processo: cfg.eh_processo,
+            tipo_execucao: cfg.eh_processo ? 'Processo' : 'Tarefa',
+            etapas_processo: etapas,
+            arquivos_anexos: [],
+            created_at: new Date().toISOString()
+          });
+
+          criadas++;
+          detalhes.push(`${cliente.nome} -> ${cfg.titulo}`);
+        }
+      });
+    });
+
+    if (novasTarefas.length > 0) {
+      saveTarefas([...tarefas, ...novasTarefas]);
+    }
+
+    return { totalCriadas: criadas, detalhes };
+  };
+
+  const adicionarDocumentoLegalCliente = (clienteId: string, doc: Omit<DocumentoLegalCliente, 'id' | 'data_upload'>) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+    const novoDoc: DocumentoLegalCliente = {
+      ...doc,
+      id: `doc-leg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      data_upload: new Date().toISOString().split('T')[0]
+    };
+    const lista = cliente.documentos_legais || [];
+    updateCliente(clienteId, { documentos_legais: [novoDoc, ...lista] }, `Anexado documento legal: ${doc.tipo} - ${doc.nome}.`);
+  };
+
+  const removerDocumentoLegalCliente = (clienteId: string, docId: string) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+    const lista = (cliente.documentos_legais || []).filter(d => d.id !== docId);
+    updateCliente(clienteId, { documentos_legais: lista }, `Documento legal removido.`);
+  };
+
+  const atualizarAcessoPortalCliente = (clienteId: string, credenciais: CredenciaisPortalCliente) => {
+    updateCliente(clienteId, { portal_acesso: credenciais }, `Credenciais de acesso ao portal do cliente atualizadas (${credenciais.email}).`);
+  };
+
   // ================= COLABORADORES =================
   const addColaborador = (colaborador: Omit<Colaborador, 'id'>) => {
     const novo: Colaborador = { ...colaborador, id: `col-${Date.now()}` };
@@ -2634,6 +2981,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         removerContatoNotificacao,
         vincularDeclaracaoCliente,
         desvincularDeclaracaoCliente,
+        adicionarTarefaEmpresa,
+        removerTarefaEmpresa,
+        atualizarTarefaEmpresa,
+        sugerirTarefasPorRegime,
+        gerarTarefasRecorrentesCarteira,
+        adicionarDocumentoLegalCliente,
+        removerDocumentoLegalCliente,
+        atualizarAcessoPortalCliente,
         addColaborador,
         updateColaborador,
         addDeclaracao,

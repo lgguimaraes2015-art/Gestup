@@ -53,6 +53,7 @@ export function PortalClienteView() {
   const [novoDocVencimento, setNovoDocVencimento] = useState('');
   const [novoDocVisivel, setNovoDocVisivel] = useState(true);
   const [arquivoCarregado, setArquivoCarregado] = useState<{ nome: string; conteudo: string; tamanho: string } | null>(null);
+  const [arquivosCarregados, setArquivosCarregados] = useState<{ nome: string; conteudo: string; tamanho: string }[]>([]);
 
   // Modal de Resposta a Solicitação
   const [solicitacaoEmResposta, setSolicitacaoEmResposta] = useState<SolicitacaoPortalCliente | null>(null);
@@ -90,57 +91,88 @@ export function PortalClienteView() {
 
   const totalSolicitacoesPendentes = solicitacoesFiltradas.filter(s => s.status === 'Pendente').length;
 
-  // Upload do arquivo em Base64
+  // Upload do arquivo em Base64 (suporta múltiplos)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    const tamanhoFormatado = file.size > 1024 * 1024
-      ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
-      : `${Math.round(file.size / 1024)} KB`;
+    Array.from(files).forEach(file => {
+      const tamanhoFormatado = file.size > 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+        : `${Math.round(file.size / 1024)} KB`;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setArquivoCarregado({
-          nome: file.name,
-          conteudo: reader.result,
-          tamanho: tamanhoFormatado
-        });
-        if (!novoDocNome) {
-          setNovoDocNome(file.name.replace(/\.[^/.]+$/, ''));
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setArquivosCarregados(prev => [
+            ...prev,
+            {
+              nome: file.name,
+              conteudo: reader.result as string,
+              tamanho: tamanhoFormatado
+            }
+          ]);
+          setArquivoCarregado({
+            nome: file.name,
+            conteudo: reader.result as string,
+            tamanho: tamanhoFormatado
+          });
+          if (!novoDocNome) {
+            setNovoDocNome(file.name.replace(/\.[^/.]+$/, ''));
+          }
         }
-      }
-    };
-    reader.readAsDataURL(file);
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleSalvarPublicacaoDoc = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novoDocNome.trim()) return;
-
     const cli = clientes.find(c => c.id === novoDocClienteId);
 
-    addDocumentoPortal({
-      cliente_id: novoDocClienteId,
-      cliente_nome: cli?.nome || 'Geral',
-      departamento: novoDocDepto,
-      pasta: novoDocPasta,
-      nome: novoDocNome.trim(),
-      descricao: novoDocDescricao.trim(),
-      arquivo_url: arquivoCarregado?.conteudo || `/portal/guia?id=doc-${Date.now()}&arquivo=${encodeURIComponent(novoDocNome)}.pdf`,
-      arquivo_conteudo: arquivoCarregado?.conteudo,
-      arquivo_tamanho: arquivoCarregado?.tamanho || '120 KB',
-      visivel_cliente: novoDocVisivel,
-      competencia: novoDocCompetencia,
-      data_vencimento: novoDocVencimento
-    });
+    if (arquivosCarregados.length > 1) {
+      arquivosCarregados.forEach(arq => {
+        addDocumentoPortal({
+          cliente_id: novoDocClienteId,
+          cliente_nome: cli?.nome || 'Geral',
+          departamento: novoDocDepto,
+          pasta: novoDocPasta,
+          nome: arq.nome,
+          descricao: novoDocDescricao.trim(),
+          arquivo_url: arq.conteudo,
+          arquivo_conteudo: arq.conteudo,
+          arquivo_tamanho: arq.tamanho,
+          visivel_cliente: novoDocVisivel,
+          competencia: novoDocCompetencia,
+          data_vencimento: novoDocVencimento
+        });
+      });
+      setToastMsg(`✅ ${arquivosCarregados.length} documentos publicados no Portal com sucesso!`);
+    } else if (novoDocNome.trim()) {
+      addDocumentoPortal({
+        cliente_id: novoDocClienteId,
+        cliente_nome: cli?.nome || 'Geral',
+        departamento: novoDocDepto,
+        pasta: novoDocPasta,
+        nome: novoDocNome.trim(),
+        descricao: novoDocDescricao.trim(),
+        arquivo_url: arquivoCarregado?.conteudo || `/portal/guia?id=doc-${Date.now()}&arquivo=${encodeURIComponent(novoDocNome)}.pdf`,
+        arquivo_conteudo: arquivoCarregado?.conteudo,
+        arquivo_tamanho: arquivoCarregado?.tamanho || '120 KB',
+        visivel_cliente: novoDocVisivel,
+        competencia: novoDocCompetencia,
+        data_vencimento: novoDocVencimento
+      });
+      setToastMsg(`✅ Documento "${novoDocNome}" publicado no Portal do Cliente com sucesso!`);
+    } else {
+      return;
+    }
 
     setModalUploadDocOpen(false);
     setNovoDocNome('');
     setNovoDocDescricao('');
     setArquivoCarregado(null);
-    setToastMsg(`✅ Documento "${novoDocNome}" publicado no Portal do Cliente com sucesso!`);
+    setArquivosCarregados([]);
     setTimeout(() => setToastMsg(null), 4000);
   };
 
@@ -636,17 +668,20 @@ export function PortalClienteView() {
                 <div className="p-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-800 text-center relative cursor-pointer">
                   <input
                     type="file"
+                    multiple
                     accept=".pdf,image/png,image/jpeg,image/jpg"
                     onChange={handleFileChange}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <Upload className="w-6 h-6 text-brand-blue mx-auto mb-1" />
                   <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    {arquivoCarregado ? arquivoCarregado.nome : 'Clique para selecionar o arquivo (PDF/Imagem)'}
+                    {arquivosCarregados.length > 1
+                      ? `${arquivosCarregados.length} arquivos selecionados para upload simultâneo`
+                      : (arquivoCarregado ? arquivoCarregado.nome : 'Clique para selecionar arquivos (suporta múltiplos de uma vez)')}
                   </p>
-                  {arquivoCarregado && (
+                  {arquivosCarregados.length > 0 && (
                     <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">
-                      ✓ Arquivo carregado ({arquivoCarregado.tamanho})
+                      ✓ {arquivosCarregados.length} arquivo(s) carregado(s) pronto(s) para publicação
                     </span>
                   )}
                 </div>

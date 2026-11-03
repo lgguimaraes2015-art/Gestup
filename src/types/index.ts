@@ -309,6 +309,9 @@ export interface HonorarioItem {
   observacoes?: string;
   conciliado_ofx?: boolean;
   dias_atraso?: number;
+  lembrete_3dias_antes_enviado?: boolean;
+  cobranca_3dias_apos_enviado?: boolean;
+  ultima_cobranca_whatsapp?: string;
   created_at: string;
 }
 

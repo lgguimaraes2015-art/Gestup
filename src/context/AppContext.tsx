@@ -210,7 +210,31 @@ interface AppContextType {
   excluirHonorario: (id: string) => void;
   sincronizarHonorariosComClientes: (competenciaAlvo?: string) => number;
   gerarHonorariosCompetencia: (competenciaAlvo: string) => void;
-  dispararCobrancaHonorarioWhatsApp: (honorarioId: string) => void;
+  obterTelefoneHonorario: (hon: HonorarioItem) => string;
+  gerarMensagemHonorarioWhatsApp: (
+    hon: HonorarioItem,
+    tipoForcado?: 'lembrete' | 'vencido'
+  ) => {
+    tipo: 'lembrete' | 'vencido';
+    texto: string;
+    diasAtraso: number;
+    diasParaVencer: number;
+  };
+  dispararCobrancaHonorarioWhatsApp: (
+    honorarioId: string,
+    opcoes?: {
+      telefoneOverride?: string;
+      mensagemOverride?: string;
+      tipoMensagem?: 'lembrete' | 'vencido';
+      salvarTelefoneNoCliente?: boolean;
+    }
+  ) => Promise<{
+    sucessoApi: boolean;
+    semTelefone?: boolean;
+    telefoneUsado: string;
+    mensagemEnviada: string;
+    tipoMensagem: 'lembrete' | 'vencido';
+  }>;
 
   // Ações de CRM
   addLead: (lead: Omit<CRMLead, 'id' | 'data_entrada'>) => void;
@@ -724,11 +748,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(parsed) && parsed.length > 0) setTarefas(parsed.map(enrichTarefa));
         } catch {}
       }
+      let clientesAtuais: Cliente[] = initialClientes.map(enrichCliente);
       const savedClientes = localStorage.getItem('gestup_v2_clientes');
       if (savedClientes) {
         try {
           const parsed = JSON.parse(savedClientes);
-          if (Array.isArray(parsed) && parsed.length > 0) setClientes(parsed.map(enrichCliente));
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            clientesAtuais = parsed.map(enrichCliente);
+            setClientes(clientesAtuais);
+          }
         } catch {}
       }
       const savedDeclaracoes = localStorage.getItem('gestup_v2_declaracoes');
@@ -761,7 +789,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setContasReceber([]);
       }
 
-      // 3. Honorários: Mantém estritamente competência 10/2026 para frente
+      // 3. Honorários: Mantém estritamente competência 10/2026 para frente e sincroniza telefones/IDs reais dos clientes
+      const higienizarHonorarios = (lista: HonorarioItem[]): HonorarioItem[] => {
+        return lista.map(h => {
+          const cli = clientesAtuais.find(
+            c => c.id === h.cliente_id || c.nome.trim().toLowerCase() === (h.cliente_nome || '').trim().toLowerCase()
+          );
+          const telHonDigits = String(h.contato_telefone || '').replace(/\D/g, '');
+          const isFakePlaceholder = /^199999900\d{2}$/.test(telHonDigits) || /^55199999900\d{2}$/.test(telHonDigits);
+          const telCli = cli?.whatsapp || cli?.telefone || cli?.contatos_notificacao?.[0]?.telefoneOuGrupo || '';
+          const telefoneResolvido = telCli || (isFakePlaceholder ? '' : (h.contato_telefone || ''));
+
+          return {
+            ...h,
+            cliente_id: cli ? cli.id : h.cliente_id,
+            contato_nome: cli?.responsavel || h.contato_nome,
+            contato_telefone: telefoneResolvido
+          };
+        });
+      };
+
       const savedHonorarios = localStorage.getItem('gestup_v2_honorarios');
       if (savedHonorarios) {
         try {
@@ -773,11 +820,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               if (isNaN(m) || isNaN(y)) return true;
               return (y > 2026) || (y === 2026 && m >= 10);
             });
-            setHonorarios(filtradosHons.length > 0 ? filtradosHons : initialHonorarios);
+            const baseHons = filtradosHons.length > 0 ? filtradosHons : initialHonorarios;
+            const honsHigienizados = higienizarHonorarios(baseHons);
+            setHonorarios(honsHigienizados);
+            try {
+              localStorage.setItem('gestup_v2_honorarios', JSON.stringify(honsHigienizados));
+            } catch {}
           }
         } catch {}
       } else {
-        setHonorarios(initialHonorarios);
+        const honsIniciais = higienizarHonorarios(initialHonorarios);
+        setHonorarios(honsIniciais);
       }
 
       // 4. Contas Bancárias & Ajustes de Saldo
@@ -1694,14 +1747,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updates.nome !== undefined ||
       updates.dia_vencimento !== undefined ||
       updates.whatsapp !== undefined ||
+      updates.telefone !== undefined ||
       updates.responsavel !== undefined
     ) {
       let houveAlteracao = false;
+      const clienteOriginal = clientes.find(c => c.id === id);
+      const nomeOriginalNorm = (clienteOriginal?.nome || '').trim().toLowerCase();
+      const novoTel = updates.whatsapp !== undefined ? updates.whatsapp : updates.telefone;
+
       const updatedHons = honorarios.map(h => {
-        if (h.cliente_id === id && h.status !== 'Pago') {
+        const mesmoCliente = h.cliente_id === id || (nomeOriginalNorm && (h.cliente_nome || '').trim().toLowerCase() === nomeOriginalNorm);
+        if (mesmoCliente) {
           houveAlteracao = true;
           let novaDataVenc = h.data_vencimento;
-          if (updates.dia_vencimento !== undefined && h.data_vencimento) {
+          if (h.status !== 'Pago' && updates.dia_vencimento !== undefined && h.data_vencimento) {
             const parts = h.data_vencimento.split('-');
             if (parts.length === 3) {
               novaDataVenc = `${parts[0]}-${parts[1]}-${String(updates.dia_vencimento).padStart(2, '0')}`;
@@ -1709,10 +1768,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           return {
             ...h,
+            cliente_id: id,
             cliente_nome: updates.nome !== undefined ? updates.nome : h.cliente_nome,
-            valor: updates.honorario_mensal !== undefined ? updates.honorario_mensal : h.valor,
+            valor: h.status !== 'Pago' && updates.honorario_mensal !== undefined ? updates.honorario_mensal : h.valor,
             data_vencimento: novaDataVenc,
-            contato_telefone: updates.whatsapp !== undefined ? updates.whatsapp : h.contato_telefone,
+            contato_telefone: novoTel !== undefined ? novoTel : h.contato_telefone,
             contato_nome: updates.responsavel !== undefined ? updates.responsavel : h.contato_nome
           };
         }
@@ -2147,33 +2207,246 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saveHonorarios([...novos, ...honorarios]);
   };
 
-  const dispararCobrancaHonorarioWhatsApp = (honorarioId: string) => {
+  const obterTelefoneHonorario = (hon: HonorarioItem): string => {
+    const cli = clientes.find(
+      c => c.id === hon.cliente_id || c.nome.trim().toLowerCase() === (hon.cliente_nome || '').trim().toLowerCase()
+    );
+    const telCli = cli?.whatsapp || cli?.telefone || cli?.contatos_notificacao?.[0]?.telefoneOuGrupo || '';
+    const telHonDigits = String(hon.contato_telefone || '').replace(/\D/g, '');
+    const isFakePlaceholder =
+      /^199999900\d{2}$/.test(telHonDigits) ||
+      /^55199999900\d{2}$/.test(telHonDigits) ||
+      telHonDigits === '19999990000' ||
+      telHonDigits === '5519999990000';
+
+    if (telCli && String(telCli).replace(/\D/g, '').length >= 10) {
+      return telCli;
+    }
+    if (!isFakePlaceholder && telHonDigits.length >= 10) {
+      return hon.contato_telefone || '';
+    }
+    return '';
+  };
+
+  const gerarMensagemHonorarioWhatsApp = (
+    hon: HonorarioItem,
+    tipoForcado?: 'lembrete' | 'vencido'
+  ): {
+    tipo: 'lembrete' | 'vencido';
+    texto: string;
+    diasAtraso: number;
+    diasParaVencer: number;
+  } => {
+    const cli = clientes.find(
+      c => c.id === hon.cliente_id || c.nome.trim().toLowerCase() === (hon.cliente_nome || '').trim().toLowerCase()
+    );
+    const nomeContato = hon.contato_nome || cli?.responsavel || hon.cliente_nome.split(' ')[0] || hon.cliente_nome;
+    const dataVencFormatada = (hon.data_vencimento || '').split('-').reverse().join('/');
+    const valorFormatado = hon.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+    // Calcula diferença de dias em relação a hoje
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const [anoV, mesV, diaV] = (hon.data_vencimento || '').split('-').map(Number);
+    const dataVencDate = anoV && mesV && diaV ? new Date(anoV, mesV - 1, diaV) : hoje;
+    dataVencDate.setHours(0, 0, 0, 0);
+    const diffDias = Math.round((hoje.getTime() - dataVencDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    const diasAtraso = Math.max(hon.dias_atraso || 0, diffDias > 0 ? diffDias : 3);
+    const diasParaVencer = diffDias < 0 ? Math.abs(diffDias) : 3;
+
+    const ehVencido = tipoForcado
+      ? tipoForcado === 'vencido'
+      : hon.status === 'Vencido' || (hon.dias_atraso !== undefined && hon.dias_atraso > 0);
+
+    if (ehVencido) {
+      const textoVencido =
+        `🚨 *Aviso de Honorário Vencido - fin.up Consultoria*\n\n` +
+        `Olá, *${nomeContato}*!\n\n` +
+        `Identificamos em nosso sistema que o honorário contábil da empresa *${hon.cliente_nome}*, referente à *Competência ${hon.competencia}*, já venceu e consta pendente de baixa:\n\n` +
+        `💰 *Valor:* R$ ${valorFormatado}\n` +
+        `📅 *Vencimento:* ${dataVencFormatada} (${diasAtraso} ${diasAtraso === 1 ? 'dia' : 'dias'} em atraso)\n\n` +
+        `⚠️ *Atenção:* Lembramos que o não pagamento dos honorários após o vencimento sujeita o valor à incidência de *multa e juros pelo atraso*, além de poder gerar o *bloqueio dos serviços prestados* até a devida regularização.\n\n` +
+        `🔑 *Chave PIX fin.up:* *financeiro@finup.com.br* (PicPay Empresas)\n\n` +
+        `Solicitamos a gentileza de realizar a regularização e nos enviar o comprovante por aqui. Caso o pagamento já tenha sido efetuado, basta nos encaminhar o comprovante para darmos baixa imediatamente. Obrigado!`;
+
+      return {
+        tipo: 'vencido',
+        texto: textoVencido,
+        diasAtraso,
+        diasParaVencer: 0
+      };
+    }
+
+    const textoLembrete =
+      `🔔 *Lembrete de Vencimento de Honorários - fin.up Consultoria*\n\n` +
+      `Olá, *${nomeContato}*! Tudo bem?\n\n` +
+      `Passando para lembrar do pagamento dos honorários contábeis da empresa *${hon.cliente_nome}* referente à *Competência ${hon.competencia}*:\n\n` +
+      `💰 *Valor:* R$ ${valorFormatado}\n` +
+      `📅 *Data de Vencimento:* ${dataVencFormatada}\n\n` +
+      `🔑 *Chave PIX fin.up:* *financeiro@finup.com.br* (PicPay Empresas)\n\n` +
+      `Qualquer dúvida ou caso já tenha efetuado o pagamento, por gentileza nos envie o comprovante por aqui para realizarmos a baixa. Muito obrigado!`;
+
+    return {
+      tipo: 'lembrete',
+      texto: textoLembrete,
+      diasAtraso: 0,
+      diasParaVencer
+    };
+  };
+
+  const dispararCobrancaHonorarioWhatsApp = async (
+    honorarioId: string,
+    opcoes?: {
+      telefoneOverride?: string;
+      mensagemOverride?: string;
+      tipoMensagem?: 'lembrete' | 'vencido';
+      salvarTelefoneNoCliente?: boolean;
+    }
+  ): Promise<{
+    sucessoApi: boolean;
+    semTelefone?: boolean;
+    telefoneUsado: string;
+    mensagemEnviada: string;
+    tipoMensagem: 'lembrete' | 'vencido';
+  }> => {
     const hon = honorarios.find(h => h.id === honorarioId);
-    if (!hon) return;
+    if (!hon) {
+      return {
+        sucessoApi: false,
+        semTelefone: true,
+        telefoneUsado: '',
+        mensagemEnviada: '',
+        tipoMensagem: 'lembrete'
+      };
+    }
 
-    const dataVencFormatada = hon.data_vencimento.split('-').reverse().join('/');
-    const atrasoTexto = (hon.dias_atraso && hon.dias_atraso > 0)
-      ? ` Constatamos que a obrigação venceu em *${dataVencFormatada}* (${hon.dias_atraso} dias em atraso).`
-      : ` Lembramos que o vencimento é em *${dataVencFormatada}*.`;
+    const { tipo, texto } = gerarMensagemHonorarioWhatsApp(hon, opcoes?.tipoMensagem);
+    const msgFinal = opcoes?.mensagemOverride || texto;
+    const telResolvido = (opcoes?.telefoneOverride || obterTelefoneHonorario(hon) || '').trim();
+    const cleanDigits = telResolvido.replace(/\D/g, '');
 
-    const msg = `🔔 *Lembrete de Honorários Contábeis - fin.up Consultoria*\n\n` +
-      `Olá, *${hon.contato_nome || hon.cliente_nome}*!\n\n` +
-      `Passando para alinhar os honorários contábeis da empresa *${hon.cliente_nome}* referente à *Competência ${hon.competencia}*.\n\n` +
-      `💰 *Valor:* R$ ${hon.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
-      `📅 *Vencimento:* ${dataVencFormatada}\n` +
-      atrasoTexto + `\n\n` +
-      `Chave PIX fin.up: *financeiro@finup.com.br* (PicPay Empresas)\n\n` +
-      `Qualquer dúvida ou caso já tenha efetuado o pagamento, por favor nos envie o comprovante. Obrigado!`;
+    if (cleanDigits.length < 10) {
+      return {
+        sucessoApi: false,
+        semTelefone: true,
+        telefoneUsado: '',
+        mensagemEnviada: msgFinal,
+        tipoMensagem: tipo
+      };
+    }
 
-    enviarMensagemWhatsApp(
+    // Se o usuário informou/atualizou o telefone no momento da cobrança, salva no Cliente e nos Honorários
+    if (opcoes?.telefoneOverride && opcoes?.salvarTelefoneNoCliente !== false) {
+      const cli = clientes.find(
+        c => c.id === hon.cliente_id || c.nome.trim().toLowerCase() === (hon.cliente_nome || '').trim().toLowerCase()
+      );
+      if (cli) {
+        updateCliente(
+          cli.id,
+          { whatsapp: cleanDigits, telefone: opcoes.telefoneOverride },
+          `WhatsApp cadastrado/atualizado durante disparo de cobrança de honorários: ${opcoes.telefoneOverride}`
+        );
+      }
+    }
+
+    const sucessoApi = await enviarMensagemWhatsApp(
       'Cliente',
       hon.cliente_nome,
-      hon.contato_telefone || '19999990000',
-      'Honorário',
-      msg,
+      telResolvido,
+      tipo === 'vencido' ? 'Cobrança Atraso' : 'Honorário',
+      msgFinal,
       hon.id
     );
+
+    const agoraStr = new Date().toLocaleString('pt-BR');
+    const updatedHons = honorarios.map(h => {
+      if (h.id === honorarioId) {
+        return {
+          ...h,
+          contato_telefone: cleanDigits,
+          ultima_cobranca_whatsapp: agoraStr,
+          lembrete_3dias_antes_enviado: tipo === 'lembrete' ? true : h.lembrete_3dias_antes_enviado,
+          cobranca_3dias_apos_enviado: tipo === 'vencido' ? true : h.cobranca_3dias_apos_enviado
+        };
+      }
+      return h;
+    });
+    saveHonorarios(updatedHons);
+
+    return {
+      sucessoApi,
+      telefoneUsado: telResolvido,
+      mensagemEnviada: msgFinal,
+      tipoMensagem: tipo
+    };
   };
+
+  // Monitoramento automático de Honorários: Disparo automático faltando 3 dias (D-3) e 3 dias após o vencimento (D+3)
+  useEffect(() => {
+    if (!whatsAppConfig.conectado || honorarios.length === 0) return;
+
+    const verificarReguaHonorariosAutomatica = async () => {
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      let houveDisparo = false;
+      const novosHonorarios = [...honorarios];
+
+      for (let i = 0; i < novosHonorarios.length; i++) {
+        const hon = novosHonorarios[i];
+        if (hon.status === 'Pago' || hon.status === 'Cancelado') continue;
+
+        const tel = obterTelefoneHonorario(hon);
+        if (!tel || tel.replace(/\D/g, '').length < 10) continue;
+
+        const [anoV, mesV, diaV] = (hon.data_vencimento || '').split('-').map(Number);
+        if (!anoV || !mesV || !diaV) continue;
+
+        const dataVenc = new Date(anoV, mesV - 1, diaV);
+        dataVenc.setHours(0, 0, 0, 0);
+        const diffDias = Math.round((hoje.getTime() - dataVenc.getTime()) / (1000 * 60 * 60 * 24));
+        // diffDias === -3 -> Faltam 3 dias para o vencimento
+        // diffDias >= 3 -> Já se passaram 3 dias do vencimento
+
+        if (diffDias === -3 && !hon.lembrete_3dias_antes_enviado) {
+          const { texto } = gerarMensagemHonorarioWhatsApp(hon, 'lembrete');
+          const enviado = await enviarMensagemWhatsApp('Cliente', hon.cliente_nome, tel, 'Honorário', texto, hon.id);
+          if (enviado) {
+            novosHonorarios[i] = {
+              ...hon,
+              lembrete_3dias_antes_enviado: true,
+              ultima_cobranca_whatsapp: new Date().toLocaleString('pt-BR')
+            };
+            houveDisparo = true;
+          }
+        } else if (diffDias === 3 && !hon.cobranca_3dias_apos_enviado) {
+          const { texto } = gerarMensagemHonorarioWhatsApp(hon, 'vencido');
+          const enviado = await enviarMensagemWhatsApp('Cliente', hon.cliente_nome, tel, 'Cobrança Atraso', texto, hon.id);
+          if (enviado) {
+            novosHonorarios[i] = {
+              ...hon,
+              status: 'Vencido',
+              dias_atraso: 3,
+              cobranca_3dias_apos_enviado: true,
+              ultima_cobranca_whatsapp: new Date().toLocaleString('pt-BR')
+            };
+            houveDisparo = true;
+          }
+        }
+      }
+
+      if (houveDisparo) {
+        saveHonorarios(novosHonorarios);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      verificarReguaHonorariosAutomatica();
+    }, 3000);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [whatsAppConfig.conectado, honorarios.length]);
 
   const atualizarHonorario = (id: string, updates: Partial<HonorarioItem>, atualizarClienteContratual = true) => {
     let clienteIdParaAtualizar: string | undefined;
@@ -2246,14 +2519,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const novosHons: HonorarioItem[] = [];
     const honsAtualizados = honorarios.map(h => {
-      if (h.competencia === competenciaAlvo && h.status !== 'Pago') {
-        const cli = clientes.find(c => c.id === h.cliente_id);
-        if (cli && cli.honorario_mensal !== h.valor) {
+      const cli = clientes.find(
+        c => c.id === h.cliente_id || c.nome.trim().toLowerCase() === (h.cliente_nome || '').trim().toLowerCase()
+      );
+      if (cli) {
+        const telReal = cli.whatsapp || cli.telefone || cli.contatos_notificacao?.[0]?.telefoneOuGrupo || '';
+        const mudouValor = h.competencia === competenciaAlvo && h.status !== 'Pago' && cli.honorario_mensal !== h.valor;
+        const mudouTel = telReal && telReal !== h.contato_telefone;
+        const mudouId = cli.id !== h.cliente_id;
+        if (mudouValor || mudouTel || mudouId) {
           countAtualizados++;
           return {
             ...h,
-            valor: cli.honorario_mensal,
-            cliente_nome: cli.nome
+            cliente_id: cli.id,
+            cliente_nome: cli.nome,
+            contato_nome: cli.responsavel || h.contato_nome,
+            contato_telefone: telReal || h.contato_telefone,
+            valor: h.competencia === competenciaAlvo && h.status !== 'Pago' ? cli.honorario_mensal : h.valor
           };
         }
       }
@@ -3005,6 +3287,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         excluirHonorario,
         sincronizarHonorariosComClientes,
         gerarHonorariosCompetencia,
+        obterTelefoneHonorario,
+        gerarMensagemHonorarioWhatsApp,
         dispararCobrancaHonorarioWhatsApp,
         gerarProvisaoMensalHonorarios,
         addReceitaNaoRecorrente,

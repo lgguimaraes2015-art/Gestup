@@ -38,7 +38,9 @@ import {
   History,
   RefreshCw,
   Pencil,
-  Trash2
+  Trash2,
+  Send,
+  ExternalLink
 } from 'lucide-react';
 
 export function FinanceiroView() {
@@ -60,6 +62,8 @@ export function FinanceiroView() {
     excluirHonorario,
     sincronizarHonorariosComClientes,
     gerarHonorariosCompetencia,
+    obterTelefoneHonorario,
+    gerarMensagemHonorarioWhatsApp,
     dispararCobrancaHonorarioWhatsApp,
     addContaPagar,
     pagarConta,
@@ -97,6 +101,14 @@ export function FinanceiroView() {
   // Modais de Edição e Criação de Honorários
   const [modalEditarHonorario, setModalEditarHonorario] = useState<HonorarioItem | null>(null);
   const [modalNovoHonorario, setModalNovoHonorario] = useState<boolean>(false);
+
+  // Modal de Cobrança / Lembrete de Honorário via WhatsApp (D-3 A Vencer / D+3 Vencido)
+  const [modalCobrancaHonorario, setModalCobrancaHonorario] = useState<HonorarioItem | null>(null);
+  const [cobrancaTelefone, setCobrancaTelefone] = useState<string>('');
+  const [cobrancaTipoMensagem, setCobrancaTipoMensagem] = useState<'lembrete' | 'vencido'>('lembrete');
+  const [cobrancaTextoMensagem, setCobrancaTextoMensagem] = useState<string>('');
+  const [enviandoCobrancaWhats, setEnviandoCobrancaWhats] = useState<boolean>(false);
+  const [clienteSemTelefoneOriginal, setClienteSemTelefoneOriginal] = useState<boolean>(false);
 
   // Form de Edição de Honorário
   const [editValor, setEditValor] = useState<number>(0);
@@ -257,11 +269,73 @@ export function FinanceiroView() {
     setTimeout(() => setToastMsg(null), 4000);
   };
 
-  // 10. Disparar Cobrança WhatsApp
+  // 10. Disparar Cobrança WhatsApp (Lembrete D-3 A Vencer ou Aviso D+3 Vencido com Bloqueio/Multa/Juros)
   const handleCobrarWhatsApp = (honorarioId: string) => {
-    dispararCobrancaHonorarioWhatsApp(honorarioId);
-    setToastMsg('📲 Lembrete de honorário enviado via WhatsApp com chave PIX PicPay!');
-    setTimeout(() => setToastMsg(null), 4000);
+    const hon = honorarios.find(h => h.id === honorarioId);
+    if (!hon) return;
+
+    const telReal = obterTelefoneHonorario(hon);
+    const { tipo, texto } = gerarMensagemHonorarioWhatsApp(hon);
+
+    setModalCobrancaHonorario(hon);
+    setCobrancaTelefone(telReal);
+    setClienteSemTelefoneOriginal(!telReal || telReal.replace(/\D/g, '').length < 10);
+    setCobrancaTipoMensagem(tipo);
+    setCobrancaTextoMensagem(texto);
+  };
+
+  const handleAlternarTipoMensagemCobranca = (novoTipo: 'lembrete' | 'vencido') => {
+    if (!modalCobrancaHonorario) return;
+    setCobrancaTipoMensagem(novoTipo);
+    const { texto } = gerarMensagemHonorarioWhatsApp(modalCobrancaHonorario, novoTipo);
+    setCobrancaTextoMensagem(texto);
+  };
+
+  const formatarNumeroWaMe = (raw: string): string => {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('55') && digits.length >= 12) return digits;
+    return `55${digits}`;
+  };
+
+  const handleConfirmarDisparoCobrancaWhats = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalCobrancaHonorario) return;
+
+    const digits = cobrancaTelefone.replace(/\D/g, '');
+    if (digits.length < 10) {
+      alert('Por favor, informe um número de WhatsApp válido com DDD (ex: 19999999999).');
+      return;
+    }
+
+    setEnviandoCobrancaWhats(true);
+    try {
+      const res = await dispararCobrancaHonorarioWhatsApp(modalCobrancaHonorario.id, {
+        telefoneOverride: cobrancaTelefone.trim(),
+        mensagemOverride: cobrancaTextoMensagem,
+        tipoMensagem: cobrancaTipoMensagem,
+        salvarTelefoneNoCliente: true
+      });
+
+      if (res.sucessoApi) {
+        setToastMsg(
+          `✅ ${cobrancaTipoMensagem === 'vencido' ? 'Cobrança de honorário vencido' : 'Lembrete de pagamento'} enviado automaticamente via WhatsApp para ${modalCobrancaHonorario.cliente_nome}!`
+        );
+        setModalCobrancaHonorario(null);
+      } else {
+        // Fallback automático: abre o WhatsApp Web / Desktop Beta já com a conversa e o texto preenchido
+        const numWa = formatarNumeroWaMe(cobrancaTelefone);
+        const urlWa = `https://wa.me/${numWa}?text=${encodeURIComponent(cobrancaTextoMensagem)}`;
+        window.open(urlWa, '_blank', 'noopener,noreferrer');
+        setToastMsg(
+          `📲 Conversa aberta no seu WhatsApp para ${modalCobrancaHonorario.cliente_nome}! (API em segundo plano indisponível no momento)`
+        );
+        setModalCobrancaHonorario(null);
+      }
+      setTimeout(() => setToastMsg(null), 5000);
+    } finally {
+      setEnviandoCobrancaWhats(false);
+    }
   };
 
   // 10.1 Ações de Gestão de Honorários em Tempo Real
@@ -1817,6 +1891,195 @@ export function FinanceiroView() {
                 >
                   Confirmar Baixa & Liquidação
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL DE COBRANÇA AUTOMÁTICA / LEMBRETE DE HONORÁRIO NO WHATSAPP          */}
+      {/* ========================================================================= */}
+      {modalCobrancaHonorario && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-emerald-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-brand-green text-white flex items-center justify-center shadow-xs">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Disparar Cobrança / Lembrete no WhatsApp</h3>
+                  <p className="text-[11px] text-slate-500">
+                    Envio automático pela Régua de Honorários (D-3 A Vencer ou D+3 Vencido)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalCobrancaHonorario(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmarDisparoCobrancaWhats} className="p-6 space-y-4 text-xs max-h-[85vh] overflow-y-auto">
+              {/* Resumo do Cliente e Parcela */}
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
+                <div>
+                  <p className="font-extrabold text-slate-900 text-sm">{modalCobrancaHonorario.cliente_nome}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Resp: <strong>{modalCobrancaHonorario.contato_nome || 'Cliente'}</strong> • Competência {modalCobrancaHonorario.competencia} • Venc: {modalCobrancaHonorario.data_vencimento.split('-').reverse().join('/')}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="font-black text-slate-900 text-sm block">
+                    R$ {modalCobrancaHonorario.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-block mt-0.5 ${
+                    modalCobrancaHonorario.status === 'Vencido'
+                      ? 'bg-red-50 text-red-700 border border-red-200'
+                      : 'bg-amber-50 text-amber-800 border border-amber-200'
+                  }`}>
+                    {modalCobrancaHonorario.status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Alerta se o cliente estava sem telefone cadastrado (ex: Mercearia Estrela - Silvia) */}
+              {clienteSemTelefoneOriginal && (
+                <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-2.5 text-amber-900">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    <strong>Cliente sem WhatsApp cadastrado na ficha:</strong> Digite o número de WhatsApp abaixo. Ao enviar, ele será <strong>salvo automaticamente</strong> no cadastro de <em>{modalCobrancaHonorario.cliente_nome}</em> para os próximos disparos automáticos!
+                  </div>
+                </div>
+              )}
+
+              {/* Seletor do Tipo de Regra (A Vencer D-3 vs Vencido D+3 com Bloqueio/Multa/Juros) */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">
+                  Regra da Mensagem (selecionada automaticamente pelo status, clique se desejar alternar):
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAlternarTipoMensagemCobranca('lembrete')}
+                    className={`p-3 rounded-2xl border text-left transition-all ${
+                      cobrancaTipoMensagem === 'lembrete'
+                        ? 'bg-blue-50/80 border-brand-blue ring-2 ring-brand-blue/20 text-slate-900'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <p className="font-bold text-xs flex items-center gap-1.5">
+                      <span>🔔 Lembrete de Pagamento (D-3)</span>
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Para honorários a vencer: lembra do vencimento próximo e informa a chave PIX.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAlternarTipoMensagemCobranca('vencido')}
+                    className={`p-3 rounded-2xl border text-left transition-all ${
+                      cobrancaTipoMensagem === 'vencido'
+                        ? 'bg-red-50/80 border-red-400 ring-2 ring-red-500/20 text-slate-900'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <p className="font-bold text-xs flex items-center gap-1.5 text-red-700">
+                      <span>🚨 Honorário Vencido (+3 dias)</span>
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Para vencidos: alerta sobre atraso, bloqueio dos serviços, multa e juros.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Telefone / WhatsApp do Cliente */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Número do WhatsApp do Cliente (com DDD) *
+                </label>
+                <div className="relative">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: (19) 99826-8919 ou 19982689196"
+                    value={cobrancaTelefone}
+                    onChange={e => setCobrancaTelefone(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-green/30"
+                  />
+                </div>
+              </div>
+
+              {/* Texto da Mensagem (Editável) */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Mensagem que será enviada no WhatsApp:
+                </label>
+                <textarea
+                  rows={8}
+                  value={cobrancaTextoMensagem}
+                  onChange={e => setCobrancaTextoMensagem(e.target.value)}
+                  className="w-full p-3 rounded-2xl border border-slate-200 bg-[#EFEAE2]/40 text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-brand-green/30"
+                />
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 border-t border-slate-100">
+                {cobrancaTelefone.replace(/\D/g, '').length >= 10 ? (
+                  <a
+                    href={`https://wa.me/${formatarNumeroWaMe(cobrancaTelefone)}?text=${encodeURIComponent(cobrancaTextoMensagem)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      dispararCobrancaHonorarioWhatsApp(modalCobrancaHonorario.id, {
+                        telefoneOverride: cobrancaTelefone.trim(),
+                        mensagemOverride: cobrancaTextoMensagem,
+                        tipoMensagem: cobrancaTipoMensagem,
+                        salvarTelefoneNoCliente: true
+                      });
+                      setModalCobrancaHonorario(null);
+                    }}
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition-all"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Abrir Direto no WhatsApp</span>
+                  </a>
+                ) : (
+                  <span className="text-[11px] text-slate-400">Informe o WhatsApp com DDD para habilitar o disparo</span>
+                )}
+
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalCobrancaHonorario(null)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={enviandoCobrancaWhats || cobrancaTelefone.replace(/\D/g, '').length < 10}
+                    className="px-5 py-2 rounded-xl bg-brand-green hover:bg-emerald-600 disabled:opacity-50 text-white font-bold transition-all shadow-md inline-flex items-center gap-1.5"
+                  >
+                    {enviandoCobrancaWhats ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Disparando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Disparar no WhatsApp</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

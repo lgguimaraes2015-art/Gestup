@@ -1933,10 +1933,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateCliente(clienteId, { tarefas_empresa: [...lista, nova] }, `Adicionada obrigação da empresa: ${config.titulo} (${config.departamento} - Dia ${config.dia_limite}).`);
   };
 
-  const removerTarefaEmpresa = (clienteId: string, tarefaConfigId: string) => {
+  const removerTarefaEmpresa = (clienteId: string, tarefaConfigIdOuTitulo: string) => {
     const cliente = clientes.find(c => c.id === clienteId);
     if (!cliente) return;
-    const lista = (cliente.tarefas_empresa || []).filter(t => t.id !== tarefaConfigId);
+    const lista = (cliente.tarefas_empresa || []).filter(t => {
+      if (t.id && t.id === tarefaConfigIdOuTitulo) return false;
+      if (t.titulo && t.titulo === tarefaConfigIdOuTitulo) return false;
+      return true;
+    });
     updateCliente(clienteId, { tarefas_empresa: lista }, `Removida obrigação da carteira da empresa.`);
   };
 

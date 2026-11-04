@@ -282,6 +282,29 @@ export function ClientesView() {
     setContatosLista(contatosLista.filter(c => c.id !== id));
   };
 
+  // Excluir Tarefa/Obrigação Vinculada à Empresa (Garantido por ID, Título e Índice)
+  const handleExcluirTarefaEmpresa = (clienteId: string, tarefa: TarefaEmpresaConfig, indexRemover: number) => {
+    const identificador = tarefa.id || tarefa.titulo;
+    removerTarefaEmpresa(clienteId, identificador);
+
+    setModalEditarCliente(prev => {
+      if (!prev) return null;
+      const filtradas = (prev.tarefas_empresa || []).filter((item, idx) => {
+        if (idx === indexRemover) return false;
+        if (tarefa.id && item.id === tarefa.id) return false;
+        if (item.titulo === tarefa.titulo) return false;
+        return true;
+      });
+      return {
+        ...prev,
+        tarefas_empresa: filtradas
+      };
+    });
+
+    setToastMsg(`🗑️ Obrigação "${tarefa.titulo}" excluída com sucesso!`);
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
   // Upload Múltiplo de Documentos Legais
   const handleUploadDocumentosLegais = (e: React.ChangeEvent<HTMLInputElement>, clienteId: string) => {
     const files = e.target.files;
@@ -1095,9 +1118,9 @@ export function ClientesView() {
                         </button>
                       </div>
                     ) : (
-                      clienteEditando.tarefas_empresa.map(t => (
+                      clienteEditando.tarefas_empresa.map((t, index) => (
                         <div
-                          key={t.id}
+                          key={t.id || `t-emp-${index}-${t.titulo}`}
                           className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-3 hover:border-purple-300 transition-all"
                         >
                           <div className="flex items-center gap-3">
@@ -1127,19 +1150,16 @@ export function ClientesView() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => {
-                                removerTarefaEmpresa(clienteEditando.id, t.id);
-                                setModalEditarCliente(prev => prev ? {
-                                  ...prev,
-                                  tarefas_empresa: (prev.tarefas_empresa || []).filter(item => item.id !== t.id)
-                                } : null);
-                                setToastMsg(`🗑️ Obrigação "${t.titulo}" excluída com sucesso.`);
-                                setTimeout(() => setToastMsg(null), 3000);
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleExcluirTarefaEmpresa(clienteEditando.id, t, index);
                               }}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer"
-                              title="Excluir tarefa desta empresa"
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
+                              title={`Excluir obrigação "${t.titulo}" desta empresa`}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                              <span>Excluir</span>
                             </button>
                           </div>
                         </div>

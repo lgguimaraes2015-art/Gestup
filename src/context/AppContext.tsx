@@ -284,7 +284,10 @@ interface AppContextType {
   removerTarefaEmpresa: (clienteId: string, tarefaConfigId: string) => void;
   atualizarTarefaEmpresa: (clienteId: string, tarefaConfigId: string, updates: Partial<TarefaEmpresaConfig>) => void;
   sugerirTarefasPorRegime: (clienteId: string) => void;
+  zerarTodasTarefasEmpresas: () => void;
   gerarTarefasRecorrentesCarteira: (competencia?: string) => { totalCriadas: number; detalhes: string[] };
+  gerarTarefasAteJaneiro2027: () => { totalCriadas: number; detalhes: string[] };
+  gerarTarefasEmpresaAteJaneiro2027: (clienteId: string) => { totalCriadas: number; detalhes: string[] };
   adicionarDocumentoLegalCliente: (clienteId: string, doc: Omit<DocumentoLegalCliente, 'id' | 'data_upload'>) => void;
   removerDocumentoLegalCliente: (clienteId: string, docId: string) => void;
   atualizarAcessoPortalCliente: (clienteId: string, credenciais: CredenciaisPortalCliente) => void;
@@ -482,7 +485,7 @@ const enrichCliente = (c: Cliente): Cliente => ({
       }
     ] : [])
   ],
-  tarefas_empresa: (c.tarefas_empresa && c.tarefas_empresa.length > 0) ? c.tarefas_empresa : getTarefasPadraoPorRegime(c.regime_tributario, c.id),
+  tarefas_empresa: Array.isArray(c.tarefas_empresa) ? c.tarefas_empresa : [],
   contatos_notificacao: (c.contatos_notificacao && c.contatos_notificacao.length > 0) ? c.contatos_notificacao : [
     {
       id: `ct-princ-${c.id}`,
@@ -626,10 +629,13 @@ const enrichDeclaracao = (d: Declaracao): Declaracao => ({
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [clientes, setClientes] = useState<Cliente[]>(() => initialClientes.map(enrichCliente));
+  const [clientes, setClientes] = useState<Cliente[]>(() =>
+    initialClientes.map(enrichCliente).map(c => ({ ...c, tarefas_empresa: [] }))
+  );
   const [colaboradores, setColaboradores] = useState<Colaborador[]>(initialColaboradores);
   const [tarefas, setTarefas] = useState<Tarefa[]>(() => {
-    const base = initialTarefas.filter(t => t.competencia !== '11/2026' || ehRegistroSamira(t));
+    const ehCompReset = (comp: string) => comp === '11/2026' || comp === '12/2026' || comp === '01/2027';
+    const base = initialTarefas.filter(t => !ehCompReset(t.competencia) || ehRegistroSamira(t));
     if (!base.some(ehRegistroSamira)) {
       base.push(tarefaRegistroSamiraPadrao);
     }
@@ -762,8 +768,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
       }
-      // Zerar tarefas do mês 11 (11/2026), preservando exclusivamente "Registro - Samira"
-      const tarefasSanitizadas = baseTarefas.filter(t => t.competencia !== '11/2026' || ehRegistroSamira(t));
+      // Zerar tarefas das competências a partir do mês 11/2026 até Janeiro/2027,
+      // preservando exclusivamente a obrigação mandatória "Registro - Samira"
+      const ehCompReset = (comp: string) => comp === '11/2026' || comp === '12/2026' || comp === '01/2027';
+      const tarefasSanitizadas = baseTarefas.filter(t => !ehCompReset(t.competencia) || ehRegistroSamira(t));
       if (!tarefasSanitizadas.some(ehRegistroSamira)) {
         tarefasSanitizadas.push(tarefaRegistroSamiraPadrao);
       }
@@ -772,17 +780,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         localStorage.setItem('gestup_v2_tarefas', JSON.stringify(tarefasFinais));
       } catch {}
-      let clientesAtuais: Cliente[] = initialClientes.map(enrichCliente);
+
+      let clientesAtuais: Cliente[] = initialClientes.map(enrichCliente).map(c => ({ ...c, tarefas_empresa: [] }));
       const savedClientes = localStorage.getItem('gestup_v2_clientes');
       if (savedClientes) {
         try {
           const parsed = JSON.parse(savedClientes);
           if (Array.isArray(parsed) && parsed.length > 0) {
             clientesAtuais = parsed.map(enrichCliente);
-            setClientes(clientesAtuais);
           }
         } catch {}
       }
+      // Migração solicitada: Zerar tarefas vinculadas às empresas para recriação de toda a base
+      const jaZerouTarefasEmpresa = localStorage.getItem('gestup_v3_tarefas_empresa_zeradas');
+      if (!jaZerouTarefasEmpresa) {
+        clientesAtuais = clientesAtuais.map(c => ({
+          ...c,
+          tarefas_empresa: []
+        }));
+        try {
+          localStorage.setItem('gestup_v3_tarefas_empresa_zeradas', 'true');
+          localStorage.setItem('gestup_v2_clientes', JSON.stringify(clientesAtuais));
+        } catch {}
+      }
+      setClientes(clientesAtuais);
       const savedDeclaracoes = localStorage.getItem('gestup_v2_declaracoes');
       if (savedDeclaracoes) {
         try {
@@ -1943,9 +1964,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const anoNum = parseInt(anoStr, 10) || 2026;
 
     clientes.filter(c => c.status === 'Ativo').forEach(cliente => {
-      const tarefasConfig = (cliente.tarefas_empresa && cliente.tarefas_empresa.length > 0)
-        ? cliente.tarefas_empresa.filter(t => t.ativo !== false)
-        : getTarefasPadraoPorRegime(cliente.regime_tributario, cliente.id);
+      const tarefasConfig = (cliente.tarefas_empresa || []).filter(t => t.ativo !== false);
+      if (tarefasConfig.length === 0) return;
 
       tarefasConfig.forEach(cfg => {
         // Verifica se já existe para esta empresa, título e competência
@@ -2013,6 +2033,202 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
           criadas++;
           detalhes.push(`${cliente.nome} -> ${cfg.titulo}`);
+        }
+      });
+    });
+
+    if (novasTarefas.length > 0) {
+      saveTarefas([...tarefas, ...novasTarefas]);
+    }
+
+    return { totalCriadas: criadas, detalhes };
+  };
+
+  const zerarTodasTarefasEmpresas = () => {
+    const atualizados = clientes.map(c => ({
+      ...c,
+      tarefas_empresa: []
+    }));
+    saveClientes(atualizados);
+  };
+
+  const gerarTarefasAteJaneiro2027 = () => {
+    const competencias = ['11/2026', '12/2026', '01/2027'];
+    let criadas = 0;
+    const detalhes: string[] = [];
+    const novasTarefas: Tarefa[] = [];
+    let tarefasAtuais = [...tarefas];
+
+    competencias.forEach(competenciaAlvo => {
+      const [mesStr, anoStr] = competenciaAlvo.split('/');
+      const mesNum = parseInt(mesStr, 10) || 11;
+      const anoNum = parseInt(anoStr, 10) || 2026;
+
+      clientes.filter(c => c.status === 'Ativo').forEach(cliente => {
+        const tarefasConfig = (cliente.tarefas_empresa || []).filter(t => t.ativo !== false);
+        if (tarefasConfig.length === 0) return;
+
+        tarefasConfig.forEach(cfg => {
+          const jaExiste = tarefasAtuais.some(
+            t => t.cliente_id === cliente.id &&
+                 t.competencia === competenciaAlvo &&
+                 t.titulo.trim().toLowerCase() === cfg.titulo.trim().toLowerCase()
+          ) || novasTarefas.some(
+            t => t.cliente_id === cliente.id &&
+                 t.competencia === competenciaAlvo &&
+                 t.titulo.trim().toLowerCase() === cfg.titulo.trim().toLowerCase()
+          );
+
+          if (!jaExiste) {
+            if (cfg.periodicidade === 'Anual' && mesNum !== 3 && mesNum !== 5 && mesNum !== 12 && mesNum !== 1) {
+              return;
+            }
+
+            const diaVenc = Math.min(Math.max(1, cfg.dia_limite || 20), 28);
+            const diaMeta = Math.max(1, diaVenc - 3);
+            const dataPrazoLegal = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaVenc).padStart(2, '0')}`;
+            const dataPrazoMeta = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaMeta).padStart(2, '0')}`;
+
+            const etapas = cfg.eh_processo && cfg.etapas_padrao
+              ? cfg.etapas_padrao.map((ep, idx) => ({
+                  id: `ep-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+                  titulo: ep.titulo,
+                  ordem: ep.ordem || (idx + 1),
+                  data_limite: dataPrazoLegal,
+                  concluida: false,
+                  arquivos: [],
+                  cobrar_whatsapp: !!ep.cobrar_whatsapp,
+                  configuracao_cobranca: ep.cobrar_whatsapp ? {
+                    habilitado: true,
+                    telefones: [cliente.whatsapp || cliente.telefone || '19992080639'],
+                    mensagem_padrao: `Olá *${cliente.nome}*, precisamos do seu retorno sobre a etapa *${ep.titulo}* referente a ${competenciaAlvo}.`,
+                    frequencia: 'Diariamente' as const,
+                    horario_envio: '08:00'
+                  } : undefined,
+                  observacoes: 'Etapa padronizada da obrigação'
+                }))
+              : undefined;
+
+            novasTarefas.push({
+              id: `tar-rec-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+              titulo: cfg.titulo,
+              descricao: `Obrigação recorrente gerada a partir da carteira da empresa ${cliente.nome}`,
+              tipo: 'Recorrente',
+              status: 'Pendente',
+              prioridade: 'Normal',
+              cliente_id: cliente.id,
+              cliente_nome: cliente.nome,
+              responsavel: cliente.responsavel || 'Guilherme',
+              data_prazo_meta: dataPrazoMeta,
+              data_prazo_legal: dataPrazoLegal,
+              categoria: cfg.departamento,
+              competencia: competenciaAlvo,
+              tempo_gasto_minutos: 0,
+              recorrencia_tipo: cfg.periodicidade === 'Eventual' ? 'Eventual' : (cfg.periodicidade === 'Anual' ? 'Anual' : 'Mensal'),
+              eh_processo: cfg.eh_processo,
+              tipo_execucao: cfg.eh_processo ? 'Processo' : 'Tarefa',
+              etapas_processo: etapas,
+              arquivos_anexos: [],
+              created_at: new Date().toISOString()
+            });
+
+            criadas++;
+            detalhes.push(`${cliente.nome} -> ${cfg.titulo} (${competenciaAlvo})`);
+          }
+        });
+      });
+    });
+
+    if (novasTarefas.length > 0) {
+      saveTarefas([...tarefas, ...novasTarefas]);
+    }
+
+    return { totalCriadas: criadas, detalhes };
+  };
+
+  const gerarTarefasEmpresaAteJaneiro2027 = (clienteId: string) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) return { totalCriadas: 0, detalhes: [] };
+    const tarefasConfig = (cliente.tarefas_empresa || []).filter(t => t.ativo !== false);
+    if (tarefasConfig.length === 0) return { totalCriadas: 0, detalhes: [] };
+
+    const competencias = ['11/2026', '12/2026', '01/2027'];
+    let criadas = 0;
+    const detalhes: string[] = [];
+    const novasTarefas: Tarefa[] = [];
+    let tarefasAtuais = [...tarefas];
+
+    competencias.forEach(competenciaAlvo => {
+      const [mesStr, anoStr] = competenciaAlvo.split('/');
+      const mesNum = parseInt(mesStr, 10) || 11;
+      const anoNum = parseInt(anoStr, 10) || 2026;
+
+      tarefasConfig.forEach(cfg => {
+        const jaExiste = tarefasAtuais.some(
+          t => t.cliente_id === cliente.id &&
+               t.competencia === competenciaAlvo &&
+               t.titulo.trim().toLowerCase() === cfg.titulo.trim().toLowerCase()
+        ) || novasTarefas.some(
+          t => t.cliente_id === cliente.id &&
+               t.competencia === competenciaAlvo &&
+               t.titulo.trim().toLowerCase() === cfg.titulo.trim().toLowerCase()
+        );
+
+        if (!jaExiste) {
+          if (cfg.periodicidade === 'Anual' && mesNum !== 3 && mesNum !== 5 && mesNum !== 12 && mesNum !== 1) {
+            return;
+          }
+
+          const diaVenc = Math.min(Math.max(1, cfg.dia_limite || 20), 28);
+          const diaMeta = Math.max(1, diaVenc - 3);
+          const dataPrazoLegal = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaVenc).padStart(2, '0')}`;
+          const dataPrazoMeta = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaMeta).padStart(2, '0')}`;
+
+          const etapas = cfg.eh_processo && cfg.etapas_padrao
+            ? cfg.etapas_padrao.map((ep, idx) => ({
+                id: `ep-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+                titulo: ep.titulo,
+                ordem: ep.ordem || (idx + 1),
+                data_limite: dataPrazoLegal,
+                concluida: false,
+                arquivos: [],
+                cobrar_whatsapp: !!ep.cobrar_whatsapp,
+                configuracao_cobranca: ep.cobrar_whatsapp ? {
+                  habilitado: true,
+                  telefones: [cliente.whatsapp || cliente.telefone || '19992080639'],
+                  mensagem_padrao: `Olá *${cliente.nome}*, precisamos do seu retorno sobre a etapa *${ep.titulo}* referente a ${competenciaAlvo}.`,
+                  frequencia: 'Diariamente' as const,
+                  horario_envio: '08:00'
+                } : undefined,
+                observacoes: 'Etapa padronizada da obrigação'
+              }))
+            : undefined;
+
+          novasTarefas.push({
+            id: `tar-rec-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            titulo: cfg.titulo,
+            descricao: `Obrigação recorrente gerada para ${cliente.nome}`,
+            tipo: 'Recorrente',
+            status: 'Pendente',
+            prioridade: 'Normal',
+            cliente_id: cliente.id,
+            cliente_nome: cliente.nome,
+            responsavel: cliente.responsavel || 'Guilherme',
+            data_prazo_meta: dataPrazoMeta,
+            data_prazo_legal: dataPrazoLegal,
+            categoria: cfg.departamento,
+            competencia: competenciaAlvo,
+            tempo_gasto_minutos: 0,
+            recorrencia_tipo: cfg.periodicidade === 'Eventual' ? 'Eventual' : (cfg.periodicidade === 'Anual' ? 'Anual' : 'Mensal'),
+            eh_processo: cfg.eh_processo,
+            tipo_execucao: cfg.eh_processo ? 'Processo' : 'Tarefa',
+            etapas_processo: etapas,
+            arquivos_anexos: [],
+            created_at: new Date().toISOString()
+          });
+
+          criadas++;
+          detalhes.push(`${cfg.titulo} (${competenciaAlvo})`);
         }
       });
     });
@@ -3291,7 +3507,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         removerTarefaEmpresa,
         atualizarTarefaEmpresa,
         sugerirTarefasPorRegime,
+        zerarTodasTarefasEmpresas,
         gerarTarefasRecorrentesCarteira,
+        gerarTarefasAteJaneiro2027,
+        gerarTarefasEmpresaAteJaneiro2027,
         adicionarDocumentoLegalCliente,
         removerDocumentoLegalCliente,
         atualizarAcessoPortalCliente,

@@ -85,6 +85,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     anexarArquivoTarefa,
     removerArquivoTarefa,
     gerarTarefasRecorrentesCarteira,
+    gerarTarefasAteJaneiro2027,
     modelosMensagens
   } = useApp();
 
@@ -192,9 +193,9 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   // Feedbacks visuais
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
-  // Lista de todas as competências existentes ordenadas (decrescente), incluindo a competência vigente
+  // Lista de todas as competências existentes ordenadas (decrescente), incluindo a competência vigente e até Jan/2027
   const competenciasDisponiveis = Array.from(
-    new Set([obterCompetenciaAtual(), ...tarefas.map(t => t.competencia).filter(Boolean)])
+    new Set([obterCompetenciaAtual(), '11/2026', '12/2026', '01/2027', ...tarefas.map(t => t.competencia).filter(Boolean)])
   ).sort((a, b) => {
     const [ma, ya] = a.split('/').map(Number);
     const [mb, yb] = b.split('/').map(Number);
@@ -849,6 +850,23 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
             <Sparkles className="w-3.5 h-3.5 text-purple-600" />
             <span>Gerar Tarefas da Carteira</span>
           </button>
+
+          <button
+            onClick={() => {
+              const res = gerarTarefasAteJaneiro2027();
+              if (res.totalCriadas > 0) {
+                setFeedbackToast(`⚡ Sucesso! ${res.totalCriadas} tarefa(s) gerada(s) até Janeiro/2027 para todas as empresas!`);
+              } else {
+                setFeedbackToast(`ℹ️ Nenhuma nova tarefa a ser gerada até Janeiro/2027. Adicione tarefas às empresas.`);
+              }
+              setTimeout(() => setFeedbackToast(null), 4000);
+            }}
+            title="Gera todas as obrigações ativas das empresas para 11/2026, 12/2026 e 01/2027"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm"
+          >
+            <Calendar className="w-3.5 h-3.5 text-white" />
+            <span>Lançar até Jan/2027</span>
+          </button>
         </div>
       </div>
 
@@ -1261,11 +1279,17 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
                             {/* Excluir */}
                             <button
-                              onClick={() => deleteTarefa(tarefa.id)}
+                              onClick={() => {
+                                if (window.confirm(`Deseja excluir a tarefa "${tarefa.titulo}" da competência ${tarefa.competencia}?`)) {
+                                  deleteTarefa(tarefa.id);
+                                  setFeedbackToast(`🗑️ Tarefa "${tarefa.titulo}" excluída.`);
+                                  setTimeout(() => setFeedbackToast(null), 3000);
+                                }
+                              }}
                               title="Excluir Tarefa"
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer"
                             >
-                              <X className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </td>
@@ -1472,6 +1496,21 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                                   <CheckCircle2 className="w-3 h-3" />
                                 </button>
                               ) : null}
+
+                              {/* Excluir Tarefa no Kanban */}
+                              <button
+                                onClick={() => {
+                                  if (window.confirm(`Deseja excluir a tarefa "${tarefa.titulo}" da competência ${tarefa.competencia}?`)) {
+                                    deleteTarefa(tarefa.id);
+                                    setFeedbackToast(`🗑️ Tarefa "${tarefa.titulo}" excluída.`);
+                                    setTimeout(() => setFeedbackToast(null), 3000);
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer"
+                                title="Excluir Tarefa"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
                             </div>
                           </div>
                         </div>

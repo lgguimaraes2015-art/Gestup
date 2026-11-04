@@ -3705,10 +3705,13 @@ const rawInitialTarefas: Tarefa[] = [
   }
 ];
 
-// O mês 11/2026 tem todas as tarefas zeradas para serem refeitas por empresa,
+// As competências a partir do mês 11/2026 até 01/2027 têm todas as tarefas zeradas
+// para serem recriadas por empresa e lançadas até Janeiro/2027,
 // com a exceção estrita e mandatória de "Registro - Samira", que deve ser preservada.
+const ehCompetenciaAlvoReset = (comp: string) => comp === '11/2026' || comp === '12/2026' || comp === '01/2027';
+
 export const initialTarefas: Tarefa[] = [
-  ...rawInitialTarefas.filter(t => t.competencia !== '11/2026' || ehRegistroSamira(t)),
+  ...rawInitialTarefas.filter(t => !ehCompetenciaAlvoReset(t.competencia) || ehRegistroSamira(t)),
   tarefaRegistroSamiraPadrao
 ];
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { useApp } from '@/context/AppContext';
+import { useApp, getTarefasPadraoPorRegime } from '@/context/AppContext';
 import {
   Cliente,
   RegimeTributario,
@@ -69,7 +69,10 @@ export function ClientesView() {
     removerTarefaEmpresa,
     atualizarTarefaEmpresa,
     sugerirTarefasPorRegime,
+    zerarTodasTarefasEmpresas,
     gerarTarefasRecorrentesCarteira,
+    gerarTarefasAteJaneiro2027,
+    gerarTarefasEmpresaAteJaneiro2027,
     adicionarDocumentoLegalCliente,
     removerDocumentoLegalCliente,
     atualizarAcessoPortalCliente
@@ -83,6 +86,11 @@ export function ClientesView() {
   const [modalNovoCliente, setModalNovoCliente] = useState(false);
   const [modalEditarCliente, setModalEditarCliente] = useState<Cliente | null>(null);
   const [modalHistoricoCliente, setModalHistoricoCliente] = useState<Cliente | null>(null);
+
+  // Cliente atualmente sendo editado sincronizado em tempo real com o contexto
+  const clienteEditando = modalEditarCliente
+    ? (clientes.find(c => c.id === modalEditarCliente.id) || modalEditarCliente)
+    : null;
   const [modalDeclaracoesCliente, setModalDeclaracoesCliente] = useState<Cliente | null>(null);
 
   // Aba ativa dentro do modal de edição/cadastro
@@ -222,6 +230,8 @@ export function ClientesView() {
         dia_vencimento: diaVencimento,
         data_inicio_contrato: dataInicioContrato,
         data_renovacao_contrato: dataRenovacaoContrato,
+        tarefas_empresa: clienteEditando?.tarefas_empresa || modalEditarCliente.tarefas_empresa || [],
+        documentos_legais: clienteEditando?.documentos_legais || modalEditarCliente.documentos_legais || [],
         portal_acesso: {
           email: portalEmail || email,
           senha: portalSenha || 'finup123',
@@ -465,6 +475,38 @@ export function ClientesView() {
 
           <button
             onClick={() => {
+              if (window.confirm('Atenção: Deseja zerar as tarefas recorrentes vinculadas de TODAS as empresas da carteira para recriar a base do zero?')) {
+                zerarTodasTarefasEmpresas();
+                setToastMsg('🗑️ Tarefas vinculadas de todas as empresas foram zeradas com sucesso!');
+                setTimeout(() => setToastMsg(null), 4000);
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-semibold shadow-2xs transition-all"
+            title="Zera a configuração de obrigações de todas as empresas para recriação do zero"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+            <span>Zerar Tarefas das Empresas</span>
+          </button>
+
+          <button
+            onClick={() => {
+              const res = gerarTarefasAteJaneiro2027();
+              if (res.totalCriadas > 0) {
+                setToastMsg(`⚡ Sucesso! ${res.totalCriadas} tarefas geradas até Janeiro/2027 para toda a carteira!`);
+              } else {
+                setToastMsg(`ℹ️ Nenhuma nova tarefa a ser gerada até Janeiro/2027. Configure as tarefas nas empresas.`);
+              }
+              setTimeout(() => setToastMsg(null), 4000);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold shadow-2xs transition-all"
+            title="Lança as obrigações de todas as empresas até Janeiro/2027 (11/2026, 12/2026 e 01/2027)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Lançar até Jan/2027</span>
+          </button>
+
+          <button
+            onClick={() => {
               limparFormulario();
               setModalNovoCliente(true);
               setTabModalCliente('dados');
@@ -676,7 +718,7 @@ export function ClientesView() {
                 <span>Dados & Contrato</span>
               </button>
 
-              {modalEditarCliente && (
+              {clienteEditando && (
                 <>
                   <button
                     type="button"
@@ -688,7 +730,7 @@ export function ClientesView() {
                     }`}
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    <span>Tarefas da Empresa ({modalEditarCliente.tarefas_empresa?.length || 0})</span>
+                    <span>Tarefas da Empresa ({clienteEditando.tarefas_empresa?.length || 0})</span>
                   </button>
 
                   <button
@@ -701,7 +743,7 @@ export function ClientesView() {
                     }`}
                   >
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Documentos Legais ({modalEditarCliente.documentos_legais?.length || 0})</span>
+                    <span>Documentos Legais ({clienteEditando.documentos_legais?.length || 0})</span>
                   </button>
                 </>
               )}
@@ -864,9 +906,9 @@ export function ClientesView() {
               )}
 
               {/* ABA 2: TAREFAS & OBRIGAÇÕES RECORRENTES DA EMPRESA */}
-              {tabModalCliente === 'tarefas' && modalEditarCliente && (
+              {tabModalCliente === 'tarefas' && clienteEditando && (
                 <div className="space-y-4">
-                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl flex items-center justify-between">
+                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
                       <h4 className="font-bold text-xs text-purple-900">
                         Obrigações Recorrentes Desta Empresa
@@ -876,18 +918,57 @@ export function ClientesView() {
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        sugerirTarefasPorRegime(modalEditarCliente.id);
-                        setToastMsg(`🪄 Obrigações padrão sugeridas carregadas para ${modalEditarCliente.regime_tributario}!`);
-                        setTimeout(() => setToastMsg(null), 3000);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs shrink-0"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Sugerir por Regime</span>
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sugerirTarefasPorRegime(clienteEditando.id);
+                          const sugeridas = getTarefasPadraoPorRegime(clienteEditando.regime_tributario, clienteEditando.id);
+                          setModalEditarCliente(prev => prev ? { ...prev, tarefas_empresa: sugeridas } : null);
+                          setToastMsg(`🪄 Obrigações padrão sugeridas carregadas para ${clienteEditando.regime_tributario}!`);
+                          setTimeout(() => setToastMsg(null), 3000);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs shrink-0"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Sugerir por Regime</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Tem certeza que deseja zerar todas as tarefas vinculadas à empresa ${clienteEditando.nome}?`)) {
+                            updateCliente(clienteEditando.id, { tarefas_empresa: [] });
+                            setModalEditarCliente(prev => prev ? { ...prev, tarefas_empresa: [] } : null);
+                            setToastMsg(`🗑️ Todas as tarefas vinculadas a ${clienteEditando.nome} foram zeradas com sucesso.`);
+                            setTimeout(() => setToastMsg(null), 3000);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-[11px] flex items-center gap-1.5 shadow-xs shrink-0"
+                        title="Zera a lista de obrigações desta empresa"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                        <span>Zerar Tarefas</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const res = gerarTarefasEmpresaAteJaneiro2027(clienteEditando.id);
+                          if (res.totalCriadas > 0) {
+                            setToastMsg(`⚡ ${res.totalCriadas} tarefa(s) gerada(s) para ${clienteEditando.nome} de 11/2026 até Janeiro/2027!`);
+                          } else {
+                            setToastMsg(`ℹ️ As tarefas desta empresa já estão lançadas ou não há tarefas ativas.`);
+                          }
+                          setTimeout(() => setToastMsg(null), 4000);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs shrink-0"
+                        title="Lança as obrigações cadastradas desta empresa para 11/2026, 12/2026 e 01/2027"
+                      >
+                        <Calendar className="w-3.5 h-3.5 text-white" />
+                        <span>Lançar até Jan/2027</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Formulário para Adicionar Nova Tarefa à Empresa */}
@@ -959,8 +1040,8 @@ export function ClientesView() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (!novaTarefaTitulo.trim()) return;
-                          adicionarTarefaEmpresa(modalEditarCliente.id, {
+                          if (!novaTarefaTitulo.trim() || !clienteEditando) return;
+                          const config: Omit<TarefaEmpresaConfig, 'id'> = {
                             titulo: novaTarefaTitulo.trim(),
                             departamento: novaTarefaDepto,
                             periodicidade: novaTarefaPeriodicidade,
@@ -972,7 +1053,12 @@ export function ClientesView() {
                               { titulo: 'Envio de guias e fechamento', ordem: 3, cobrar_whatsapp: true }
                             ] : undefined,
                             ativo: true
-                          });
+                          };
+                          adicionarTarefaEmpresa(clienteEditando.id, config);
+                          setModalEditarCliente(prev => prev ? {
+                            ...prev,
+                            tarefas_empresa: [...(prev.tarefas_empresa || []), { ...config, id: `t-cfg-${Date.now()}` }]
+                          } : null);
                           setNovaTarefaTitulo('');
                           setToastMsg(`✅ Obrigação adicionada à empresa com sucesso!`);
                           setTimeout(() => setToastMsg(null), 3000);
@@ -988,22 +1074,28 @@ export function ClientesView() {
                   {/* Lista de Tarefas Configuradas */}
                   <div className="space-y-2">
                     <span className="font-bold text-slate-700 block text-xs">
-                      Tarefas Ativas Cadastradas para {modalEditarCliente.nome} ({modalEditarCliente.tarefas_empresa?.length || 0}):
+                      Tarefas Ativas Cadastradas para {clienteEditando.nome} ({clienteEditando.tarefas_empresa?.length || 0}):
                     </span>
 
-                    {(!modalEditarCliente.tarefas_empresa || modalEditarCliente.tarefas_empresa.length === 0) ? (
+                    {(!clienteEditando.tarefas_empresa || clienteEditando.tarefas_empresa.length === 0) ? (
                       <div className="text-center py-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                         <p className="text-slate-400 italic text-xs">Nenhuma tarefa vinculada a esta empresa.</p>
                         <button
                           type="button"
-                          onClick={() => sugerirTarefasPorRegime(modalEditarCliente.id)}
+                          onClick={() => {
+                            sugerirTarefasPorRegime(clienteEditando.id);
+                            const sugeridas = getTarefasPadraoPorRegime(clienteEditando.regime_tributario, clienteEditando.id);
+                            setModalEditarCliente(prev => prev ? { ...prev, tarefas_empresa: sugeridas } : null);
+                            setToastMsg(`🪄 Sugestões carregadas para ${clienteEditando.regime_tributario}!`);
+                            setTimeout(() => setToastMsg(null), 3000);
+                          }}
                           className="mt-2 px-3 py-1 bg-purple-100 text-purple-800 font-bold rounded-xl text-xs hover:bg-purple-200"
                         >
-                          Carregar sugestões para {modalEditarCliente.regime_tributario}
+                          Carregar sugestões para {clienteEditando.regime_tributario}
                         </button>
                       </div>
                     ) : (
-                      modalEditarCliente.tarefas_empresa.map(t => (
+                      clienteEditando.tarefas_empresa.map(t => (
                         <div
                           key={t.id}
                           className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-3 hover:border-purple-300 transition-all"
@@ -1036,11 +1128,15 @@ export function ClientesView() {
                             <button
                               type="button"
                               onClick={() => {
-                                removerTarefaEmpresa(modalEditarCliente.id, t.id);
-                                setToastMsg(`🗑️ Obrigação removida da carteira.`);
+                                removerTarefaEmpresa(clienteEditando.id, t.id);
+                                setModalEditarCliente(prev => prev ? {
+                                  ...prev,
+                                  tarefas_empresa: (prev.tarefas_empresa || []).filter(item => item.id !== t.id)
+                                } : null);
+                                setToastMsg(`🗑️ Obrigação "${t.titulo}" excluída com sucesso.`);
                                 setTimeout(() => setToastMsg(null), 3000);
                               }}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer"
                               title="Excluir tarefa desta empresa"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1054,7 +1150,7 @@ export function ClientesView() {
               )}
 
               {/* ABA 3: DOCUMENTOS LEGAIS DA EMPRESA (UPLOAD MÚLTIPLO) */}
-              {tabModalCliente === 'documentos_legais' && modalEditarCliente && (
+              {tabModalCliente === 'documentos_legais' && clienteEditando && (
                 <div className="space-y-4">
                   <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center justify-between">
                     <div>
@@ -1082,7 +1178,7 @@ export function ClientesView() {
                     type="file"
                     multiple
                     ref={documentosLegaisInputRef}
-                    onChange={e => handleUploadDocumentosLegais(e, modalEditarCliente.id)}
+                    onChange={e => handleUploadDocumentosLegais(e, clienteEditando.id)}
                     className="hidden"
                   />
 
@@ -1134,15 +1230,15 @@ export function ClientesView() {
                   {/* Lista de Documentos Legais Anexados */}
                   <div className="space-y-2">
                     <span className="font-bold text-slate-700 block text-xs">
-                      Documentos Legais Cadastrados ({modalEditarCliente.documentos_legais?.length || 0}):
+                      Documentos Legais Cadastrados ({clienteEditando.documentos_legais?.length || 0}):
                     </span>
 
-                    {(!modalEditarCliente.documentos_legais || modalEditarCliente.documentos_legais.length === 0) ? (
+                    {(!clienteEditando.documentos_legais || clienteEditando.documentos_legais.length === 0) ? (
                       <p className="text-slate-400 italic text-center py-4 bg-slate-50 rounded-xl">
                         Nenhum documento legal anexado ainda.
                       </p>
                     ) : (
-                      modalEditarCliente.documentos_legais.map(doc => (
+                      clienteEditando.documentos_legais.map(doc => (
                         <div
                           key={doc.id}
                           className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-3 hover:border-indigo-300 transition-all"
@@ -1177,11 +1273,15 @@ export function ClientesView() {
                             <button
                               type="button"
                               onClick={() => {
-                                removerDocumentoLegalCliente(modalEditarCliente.id, doc.id);
+                                removerDocumentoLegalCliente(clienteEditando.id, doc.id);
+                                setModalEditarCliente(prev => prev ? {
+                                  ...prev,
+                                  documentos_legais: (prev.documentos_legais || []).filter(d => d.id !== doc.id)
+                                } : null);
                                 setToastMsg(`🗑️ Documento legal excluído.`);
                                 setTimeout(() => setToastMsg(null), 3000);
                               }}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer"
                               title="Excluir documento"
                             >
                               <Trash2 className="w-3.5 h-3.5" />

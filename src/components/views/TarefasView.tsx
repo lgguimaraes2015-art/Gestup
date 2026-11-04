@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
+import { obterCompetenciaAtual } from '@/lib/dateUtils';
 import {
   Tarefa,
   StatusTarefa,
@@ -94,7 +95,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
   // Estados de Controle de Visualização e Filtros
   const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista');
-  const [competenciaSelecionada, setCompetenciaSelecionada] = useState<string>('10/2026');
+  const [competenciaSelecionada, setCompetenciaSelecionada] = useState<string>(() => obterCompetenciaAtual());
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>('todos');
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');
   const [filtroDepto, setFiltroDepto] = useState<string>('todos');
@@ -158,7 +159,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   const [novoResponsavel, setNovoResponsavel] = useState(colaboradores[0]?.nome || '');
   const [novoDepto, setNovoDepto] = useState<Departamento>('Fiscal');
   const [novoPrioridade, setNovoPrioridade] = useState<Prioridade>('Normal');
-  const [novoCompetencia, setNovoCompetencia] = useState(competenciaSelecionada === 'todas' ? '10/2026' : competenciaSelecionada);
+  const [novoCompetencia, setNovoCompetencia] = useState(() => competenciaSelecionada === 'todas' ? obterCompetenciaAtual() : competenciaSelecionada);
 
   // Recorrência: 'Mensal' | 'Trimestral' | 'Anual' | 'Eventual'
   const [novoRecorrenciaTipo, setNovoRecorrenciaTipo] = useState<'Mensal' | 'Trimestral' | 'Anual' | 'Eventual'>('Mensal');
@@ -191,9 +192,9 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   // Feedbacks visuais
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
-  // Lista de todas as competências existentes ordenadas (decrescente)
+  // Lista de todas as competências existentes ordenadas (decrescente), incluindo a competência vigente
   const competenciasDisponiveis = Array.from(
-    new Set(tarefas.map(t => t.competencia).filter(Boolean))
+    new Set([obterCompetenciaAtual(), ...tarefas.map(t => t.competencia).filter(Boolean)])
   ).sort((a, b) => {
     const [ma, ya] = a.split('/').map(Number);
     const [mb, yb] = b.split('/').map(Number);
@@ -203,7 +204,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   // Navegação de mês anterior e próximo
   const handleMudarMes = (direcao: 'anterior' | 'proximo') => {
     if (competenciaSelecionada === 'todas') {
-      setCompetenciaSelecionada('10/2026');
+      setCompetenciaSelecionada(obterCompetenciaAtual());
       return;
     }
     const [mes, ano] = competenciaSelecionada.split('/').map(Number);
@@ -402,7 +403,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
       data_prazo_meta: novoRecorrenciaTipo === 'Eventual' ? prazoFinal : (novoPrazoMeta || prazoFinal),
       data_prazo_legal: prazoFinal,
       categoria: novoDepto,
-      competencia: novoCompetencia || '10/2026',
+      competencia: novoCompetencia || obterCompetenciaAtual(),
       tempo_gasto_minutos: 0,
       recorrencia_tipo: novoRecorrenciaTipo,
       prazo_finalizacao: novoRecorrenciaTipo === 'Eventual' ? prazoFinal : undefined,
@@ -833,7 +834,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
           <button
             onClick={() => {
-              const comp = competenciaSelecionada === 'todas' ? '10/2026' : competenciaSelecionada;
+              const comp = competenciaSelecionada === 'todas' ? obterCompetenciaAtual() : competenciaSelecionada;
               const res = gerarTarefasRecorrentesCarteira(comp);
               if (res.totalCriadas > 0) {
                 setFeedbackToast(`⚡ ${res.totalCriadas} tarefa(s) gerada(s) da carteira de empresas para ${comp}!`);
@@ -1114,7 +1115,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                         {/* Competência */}
                         <td className="px-4 py-4">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-brand-blue border border-blue-200">
-                            {tarefa.competencia || '10/2026'}
+                            {tarefa.competencia || obterCompetenciaAtual()}
                           </span>
                         </td>
 
@@ -1966,7 +1967,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                   <input
                     type="text"
                     required
-                    placeholder="Ex: 10/2026"
+                    placeholder="Ex: 11/2026"
                     value={novoCompetencia}
                     onChange={e => setNovoCompetencia(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-bold text-brand-blue"

@@ -17,6 +17,7 @@ import {
   DocumentoPortalCliente,
   SolicitacaoPortalCliente
 } from '@/types';
+import { ehRegistroSamira } from './dateUtils';
 
 export const initialClientes: Cliente[] = [
   {
@@ -391,7 +392,77 @@ export const initialColaboradores: Colaborador[] = [
   }
 ];
 
-export const initialTarefas: Tarefa[] = [
+export const tarefaRegistroSamiraPadrao: Tarefa = {
+  id: "tar-registro-samira-11-2026",
+  titulo: "Registro - Samira",
+  descricao: "Processo de registro e admissão da colaboradora Samira",
+  tipo: "Avulsa",
+  status: "Em Andamento",
+  prioridade: "Alta",
+  cliente_id: "6a722218cec951fb77d80bb6",
+  cliente_nome: "THE BLACK BURGUER",
+  responsavel: "Guilherme",
+  data_prazo_meta: "2026-11-10",
+  data_prazo_legal: "2026-11-15",
+  categoria: "Pessoal",
+  competencia: "11/2026",
+  tempo_gasto_minutos: 45,
+  recorrencia_tipo: "Eventual",
+  eh_processo: true,
+  tipo_execucao: "Processo",
+  etapas_processo: [
+    {
+      id: "etapa-sam-1",
+      titulo: "Coleta de documentos admissionais (CTPS, RG, CPF, ASO)",
+      ordem: 1,
+      data_limite: "2026-11-06",
+      responsavel: "Guilherme",
+      concluida: true,
+      arquivos: [],
+      cobrar_whatsapp: true,
+      configuracao_cobranca: {
+        habilitado: true,
+        telefones: ["19986092125"],
+        frequencia: "Diariamente",
+        mensagem_padrao: "Olá! Lembramos da pendência de envio dos documentos admissionais da Samira.",
+        horario_envio: "08:00"
+      },
+      observacoes: "Cobrar envio do ASO admissional pelo cliente."
+    },
+    {
+      id: "etapa-sam-2",
+      titulo: "Qualificação cadastral e envio do evento S-2200 ao eSocial",
+      ordem: 2,
+      data_limite: "2026-11-08",
+      responsavel: "Guilherme",
+      concluida: false,
+      arquivos: [],
+      cobrar_whatsapp: false,
+      observacoes: "Validar PIS/CPF na Receita Federal antes do envio."
+    },
+    {
+      id: "etapa-sam-3",
+      titulo: "Elaboração e assinatura do contrato de trabalho e ficha de registro",
+      ordem: 3,
+      data_limite: "2026-11-10",
+      responsavel: "Guilherme",
+      concluida: false,
+      arquivos: [],
+      cobrar_whatsapp: true,
+      configuracao_cobranca: {
+        habilitado: true,
+        telefones: ["19986092125"],
+        frequencia: "Dia sim, dia não",
+        mensagem_padrao: "Olá! Lembramos da assinatura da documentação de registro da funcionária Samira.",
+        horario_envio: "08:00"
+      },
+      observacoes: "Coletar assinatura da funcionária e do empregador."
+    }
+  ],
+  created_at: "2026-11-01"
+};
+
+const rawInitialTarefas: Tarefa[] = [
   {
     "id": "6aa35d009f28f65c1df34e94",
     "titulo": "NOTA FISCAL DE SERVIÇO - RECOVERY",
@@ -3632,6 +3703,13 @@ export const initialTarefas: Tarefa[] = [
     "declaracao_id": "",
     "created_at": "2026-03-03"
   }
+];
+
+// O mês 11/2026 tem todas as tarefas zeradas para serem refeitas por empresa,
+// com a exceção estrita e mandatória de "Registro - Samira", que deve ser preservada.
+export const initialTarefas: Tarefa[] = [
+  ...rawInitialTarefas.filter(t => t.competencia !== '11/2026' || ehRegistroSamira(t)),
+  tarefaRegistroSamiraPadrao
 ];
 
 export const initialDeclaracoes: Declaracao[] = [

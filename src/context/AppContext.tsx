@@ -54,8 +54,13 @@ import {
   initialContasBancarias,
   initialModelosMensagens,
   initialDocumentosPortal,
-  initialSolicitacoesPortal
+  initialSolicitacoesPortal,
+  tarefaRegistroSamiraPadrao
 } from '@/lib/mockData';
+import {
+  obterCompetenciaAtual,
+  ehRegistroSamira
+} from '@/lib/dateUtils';
 import {
   initialModelosCaptação,
   initialEmpresasRadar,
@@ -623,7 +628,13 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [clientes, setClientes] = useState<Cliente[]>(() => initialClientes.map(enrichCliente));
   const [colaboradores, setColaboradores] = useState<Colaborador[]>(initialColaboradores);
-  const [tarefas, setTarefas] = useState<Tarefa[]>(() => initialTarefas.map(enrichTarefa));
+  const [tarefas, setTarefas] = useState<Tarefa[]>(() => {
+    const base = initialTarefas.filter(t => t.competencia !== '11/2026' || ehRegistroSamira(t));
+    if (!base.some(ehRegistroSamira)) {
+      base.push(tarefaRegistroSamiraPadrao);
+    }
+    return base.map(enrichTarefa);
+  });
   const [declaracoes, setDeclaracoes] = useState<Declaracao[]>(() => (initialDeclaracoes as Declaracao[]).map(enrichDeclaracao));
   const [leads, setLeads] = useState<CRMLead[]>(initialLeads);
   const [procedimentos, setProcedimentos] = useState<CRMProcedimento[]>([]);
@@ -742,12 +753,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('gestup_declaracoes');
 
       const savedTarefas = localStorage.getItem('gestup_v2_tarefas');
+      let baseTarefas: Tarefa[] = initialTarefas;
       if (savedTarefas) {
         try {
           const parsed = JSON.parse(savedTarefas);
-          if (Array.isArray(parsed) && parsed.length > 0) setTarefas(parsed.map(enrichTarefa));
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            baseTarefas = parsed;
+          }
         } catch {}
       }
+      // Zerar tarefas do mês 11 (11/2026), preservando exclusivamente "Registro - Samira"
+      const tarefasSanitizadas = baseTarefas.filter(t => t.competencia !== '11/2026' || ehRegistroSamira(t));
+      if (!tarefasSanitizadas.some(ehRegistroSamira)) {
+        tarefasSanitizadas.push(tarefaRegistroSamiraPadrao);
+      }
+      const tarefasFinais = tarefasSanitizadas.map(enrichTarefa);
+      setTarefas(tarefasFinais);
+      try {
+        localStorage.setItem('gestup_v2_tarefas', JSON.stringify(tarefasFinais));
+      } catch {}
       let clientesAtuais: Cliente[] = initialClientes.map(enrichCliente);
       const savedClientes = localStorage.getItem('gestup_v2_clientes');
       if (savedClientes) {
@@ -1909,7 +1933,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateCliente(clienteId, { tarefas_empresa: sugeridas }, `Carregadas obrigações padrão para o regime ${cliente.regime_tributario}.`);
   };
 
-  const gerarTarefasRecorrentesCarteira = (competenciaAlvo: string = '10/2026') => {
+  const gerarTarefasRecorrentesCarteira = (competenciaAlvo: string = obterCompetenciaAtual()) => {
     let criadas = 0;
     const detalhes: string[] = [];
     const novasTarefas: Tarefa[] = [];

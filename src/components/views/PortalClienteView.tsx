@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
+import { obterCompetenciaAtual } from '@/lib/dateUtils';
 import {
   Folder,
   FileText,
@@ -49,7 +50,7 @@ export function PortalClienteView() {
   const [novoDocPasta, setNovoDocPasta] = useState('Guias de Tributos');
   const [novoDocNome, setNovoDocNome] = useState('');
   const [novoDocDescricao, setNovoDocDescricao] = useState('');
-  const [novoDocCompetencia, setNovoDocCompetencia] = useState('10/2026');
+  const [novoDocCompetencia, setNovoDocCompetencia] = useState(() => obterCompetenciaAtual());
   const [novoDocVencimento, setNovoDocVencimento] = useState('');
   const [novoDocVisivel, setNovoDocVisivel] = useState(true);
   const [arquivoCarregado, setArquivoCarregado] = useState<{ nome: string; conteudo: string; tamanho: string } | null>(null);

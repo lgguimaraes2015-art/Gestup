@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
+import { obterCompetenciaAtual } from '@/lib/dateUtils';
 import {
   TrendingUp,
   DollarSign,
@@ -23,8 +24,17 @@ import {
 export function DashboardBIView() {
   const { tarefas, clientes, colaboradores, setActiveTab } = useApp();
 
-  const [competenciaAtiva, setCompetenciaAtiva] = useState('10/2026');
+  const [competenciaAtiva, setCompetenciaAtiva] = useState(() => obterCompetenciaAtual());
   const [responsavelFiltro, setResponsavelFiltro] = useState('todos');
+
+  // Competências disponíveis com mês vigente garantido
+  const competenciasDisponiveis = Array.from(
+    new Set([obterCompetenciaAtual(), ...tarefas.map(t => t.competencia).filter(Boolean)])
+  ).sort((a, b) => {
+    const [ma, ya] = a.split('/').map(Number);
+    const [mb, yb] = b.split('/').map(Number);
+    return (yb * 100 + mb) - (ya * 100 + ma);
+  });
 
   // Filtragem dos Dados
   const tarefasComp = competenciaAtiva === 'todas'
@@ -88,9 +98,9 @@ export function DashboardBIView() {
             onChange={e => setCompetenciaAtiva(e.target.value)}
             className="text-xs bg-transparent text-white font-bold border-none focus:outline-none pr-3 cursor-pointer"
           >
-            <option value="10/2026" className="text-slate-900">Competência 10/2026</option>
-            <option value="09/2026" className="text-slate-900">Competência 09/2026</option>
-            <option value="08/2026" className="text-slate-900">Competência 08/2026</option>
+            {competenciasDisponiveis.map(c => (
+              <option key={c} value={c} className="text-slate-900">Competência {c}</option>
+            ))}
             <option value="todas" className="text-slate-900">Todas as Competências</option>
           </select>
 

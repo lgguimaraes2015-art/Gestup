@@ -37,7 +37,9 @@ import {
   CredenciaisPortalCliente,
   TipoDocumentoLegal,
   DocumentoLegalCliente,
-  TarefaEmpresaConfig
+  TarefaEmpresaConfig,
+  SubprocessoAtualizacao,
+  ComentarioItem
 } from '@/types';
 import {
   initialClientes,
@@ -131,6 +133,9 @@ interface AppContextType {
   removerArquivoEtapa: (tarefaId: string, etapaId: string, arquivoId: string) => void;
   configurarCobrancaWhatsAppEtapa: (tarefaId: string, etapaId: string, config: ConfiguracaoCobrancaEtapa) => void;
   dispararCobrancaEtapaWhatsApp: (tarefaId: string, etapaId: string) => void;
+  adicionarAtualizacaoSubprocesso: (tarefaId: string, etapaId: string, atualizacao: Omit<SubprocessoAtualizacao, 'id' | 'data'>) => void;
+  prorrogarPrazoSubprocesso: (tarefaId: string, etapaId: string, justificativa: string, novoPrazoCustom?: string) => { sucesso: boolean; novoPrazo: string; mensagem: string };
+  padronizarResponsaveisCarteira: () => { totalAlteradas: number };
 
   // Modelos de Mensagens Personalizadas por Tarefa
   modelosMensagens: ModeloMensagemTarefa[];
@@ -176,6 +181,7 @@ interface AppContextType {
   // Ações de Colaboradores
   addColaborador: (colaborador: Omit<Colaborador, 'id'>) => void;
   updateColaborador: (id: string, updates: Partial<Colaborador>) => void;
+  deleteColaborador: (id: string) => void;
 
   // Ações de Declarações Fiscais (CRUD)
   addDeclaracao: (dec: Omit<Declaracao, 'id'>) => void;
@@ -294,6 +300,14 @@ interface AppContextType {
 
   redefinirDadosPadrao: () => void;
 }
+
+export const getResponsavelPorDepartamento = (depto?: string, categoria?: string): string => {
+  const dep = (depto || categoria || '').toLowerCase();
+  if (dep.includes('fiscal') || dep.includes('tribut')) return 'Guilherme';
+  if (dep.includes('pessoal') || dep.includes('rh') || dep.includes('folha') || dep.includes('trabalh')) return 'Ygor';
+  if (dep.includes('contábil') || dep.includes('contabil')) return 'Ygor';
+  return 'Guilherme';
+};
 
 export const getTarefasPadraoPorRegime = (regime: string, clienteId: string): TarefaEmpresaConfig[] => {
   if (regime === 'MEI') {
@@ -775,11 +789,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!tarefasSanitizadas.some(ehRegistroSamira)) {
         tarefasSanitizadas.push(tarefaRegistroSamiraPadrao);
       }
-      const tarefasFinais = tarefasSanitizadas.map(enrichTarefa);
+      let tarefasFinais = tarefasSanitizadas.map(enrichTarefa);
+
+      // Padronização mandatória solicitada: Fiscal -> Guilherme | Pessoal / RH -> Ygor
+      tarefasFinais = tarefasFinais.map(t => {
+        const cat = (t.categoria || '').toLowerCase();
+        const tit = (t.titulo || '').toLowerCase();
+        let novoResp = t.responsavel;
+
+        if (cat.includes('fiscal') || tit.includes('das') || tit.includes('pgdas') || tit.includes('dctf') || tit.includes('tribut')) {
+          novoResp = 'Guilherme';
+        } else if (cat.includes('pessoal') || cat.includes('rh') || tit.includes('folha') || tit.includes('pró-labore') || tit.includes('pro-labore') || tit.includes('admissão') || tit.includes('registro') || tit.includes('samira')) {
+          novoResp = 'Ygor';
+        } else if (cat.includes('contábil') || cat.includes('contabil')) {
+          novoResp = 'Ygor';
+        }
+
+        const etapasAtualizadas = t.etapas_processo?.map(ep => ({
+          ...ep,
+          responsavel: novoResp
+        }));
+
+        return {
+          ...t,
+          responsavel: novoResp,
+          etapas_processo: etapasAtualizadas || t.etapas_processo
+        };
+      });
+
       setTarefas(tarefasFinais);
       try {
         localStorage.setItem('gestup_v2_tarefas', JSON.stringify(tarefasFinais));
       } catch {}
+
+      // Carregar colaboradores salvos do localStorage
+      const savedColaboradores = localStorage.getItem('gestup_v2_colaboradores');
+      if (savedColaboradores) {
+        try {
+          const parsedColabs = JSON.parse(savedColaboradores);
+          if (Array.isArray(parsedColabs) && parsedColabs.length > 0) {
+            setColaboradores(parsedColabs);
+          }
+        } catch {}
+      }
 
       let clientesAtuais: Cliente[] = initialClientes.map(enrichCliente).map(c => ({ ...c, tarefas_empresa: [] }));
       const savedClientes = localStorage.getItem('gestup_v2_clientes');
@@ -1045,6 +1097,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const saveTarefas = (newTarefas: Tarefa[]) => {
     setTarefas(newTarefas);
     try { localStorage.setItem('gestup_v2_tarefas', JSON.stringify(newTarefas)); } catch {}
+  };
+
+  const saveColaboradores = (newColabs: Colaborador[]) => {
+    setColaboradores(newColabs);
+    try { localStorage.setItem('gestup_v2_colaboradores', JSON.stringify(newColabs)); } catch {}
   };
 
   const saveClientes = (newClientes: Cliente[]) => {
@@ -1681,6 +1738,165 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // ================= ATUALIZAÇÕES & PRORROGAÇÃO DE SUBPROCESSOS (+24h COM JUSTIFICATIVA) =================
+  const adicionarAtualizacaoSubprocesso = (
+    tarefaId: string,
+    etapaId: string,
+    atualizacao: Omit<SubprocessoAtualizacao, 'id' | 'data'>
+  ) => {
+    const agora = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const novaAtualizacao: SubprocessoAtualizacao = {
+      ...atualizacao,
+      id: `at-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      data: agora
+    };
+
+    const atualizadas = tarefas.map(t => {
+      if (t.id !== tarefaId) return t;
+      let nomeEtapa = 'Subprocesso';
+      const etapasNovas = (t.etapas_processo || []).map(ep => {
+        if (ep.id !== etapaId) return ep;
+        nomeEtapa = ep.titulo;
+        return {
+          ...ep,
+          atualizacoes: [...(ep.atualizacoes || []), novaAtualizacao]
+        };
+      });
+
+      const novoComentario: ComentarioItem = {
+        id: `com-at-${Date.now()}`,
+        texto: `📝 Atualização de status na etapa "${nomeEtapa}": ${atualizacao.texto}`,
+        autor: atualizacao.autor || 'Guilherme',
+        data: agora
+      };
+
+      return {
+        ...t,
+        etapas_processo: etapasNovas,
+        comentarios_lista: [...(t.comentarios_lista || []), novoComentario]
+      };
+    });
+
+    saveTarefas(atualizadas);
+  };
+
+  const prorrogarPrazoSubprocesso = (
+    tarefaId: string,
+    etapaId: string,
+    justificativa: string,
+    novoPrazoCustom?: string
+  ): { sucesso: boolean; novoPrazo: string; mensagem: string } => {
+    const tarefa = tarefas.find(t => t.id === tarefaId);
+    if (!tarefa) return { sucesso: false, novoPrazo: '', mensagem: 'Tarefa não encontrada' };
+    const etapa = (tarefa.etapas_processo || []).find(e => e.id === etapaId);
+    if (!etapa) return { sucesso: false, novoPrazo: '', mensagem: 'Subprocesso não encontrado' };
+
+    const prazoAnterior = etapa.data_limite || tarefa.data_prazo_meta || new Date().toISOString().split('T')[0];
+
+    // Calcula nova data (+24 horas = +1 dia) se não informada customizada
+    let novoPrazo = novoPrazoCustom;
+    if (!novoPrazo) {
+      try {
+        const d = new Date(prazoAnterior + 'T12:00:00');
+        d.setDate(d.getDate() + 1);
+        novoPrazo = d.toISOString().split('T')[0];
+      } catch {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        novoPrazo = d.toISOString().split('T')[0];
+      }
+    }
+
+    const agora = new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const autor = 'Guilherme';
+
+    const novaAtualizacao: SubprocessoAtualizacao = {
+      id: `prorr-${Date.now()}`,
+      texto: `⏰ Prazo prorrogado em +24 horas (De ${prazoAnterior} para ${novoPrazo}). Justificativa: ${justificativa}`,
+      autor,
+      data: agora,
+      tipo: 'Prorrogação',
+      justificativa,
+      prazo_anterior: prazoAnterior,
+      novo_prazo: novoPrazo
+    };
+
+    const novoComentario: ComentarioItem = {
+      id: `com-prorr-${Date.now()}`,
+      texto: `⏰ Prorrogação de 24h na etapa "${etapa.titulo}": ${justificativa} (Novo prazo: ${novoPrazo})`,
+      autor,
+      data: agora
+    };
+
+    const atualizadas = tarefas.map(t => {
+      if (t.id !== tarefaId) return t;
+      const etapasNovas = (t.etapas_processo || []).map(ep => {
+        if (ep.id !== etapaId) return ep;
+        return {
+          ...ep,
+          data_limite: novoPrazo!,
+          prorrogacoes_count: (ep.prorrogacoes_count || 0) + 1,
+          atualizacoes: [...(ep.atualizacoes || []), novaAtualizacao]
+        };
+      });
+
+      return {
+        ...t,
+        prorrogacoes_count: (t.prorrogacoes_count || 0) + 1,
+        etapas_processo: etapasNovas,
+        comentarios_lista: [...(t.comentarios_lista || []), novoComentario]
+      };
+    });
+
+    saveTarefas(atualizadas);
+
+    return {
+      sucesso: true,
+      novoPrazo,
+      mensagem: `Prazo da etapa "${etapa.titulo}" prorrogado com sucesso para ${novoPrazo}.`
+    };
+  };
+
+  const padronizarResponsaveisCarteira = () => {
+    let alteradas = 0;
+    const tarefasAtualizadas = tarefas.map(t => {
+      const cat = (t.categoria || '').toLowerCase();
+      const tit = (t.titulo || '').toLowerCase();
+      let novoResp = t.responsavel;
+
+      if (cat.includes('fiscal') || tit.includes('das') || tit.includes('pgdas') || tit.includes('dctf') || tit.includes('tribut')) {
+        novoResp = 'Guilherme';
+      } else if (cat.includes('pessoal') || cat.includes('rh') || tit.includes('folha') || tit.includes('pró-labore') || tit.includes('pro-labore') || tit.includes('admissão') || tit.includes('registro') || tit.includes('samira')) {
+        novoResp = 'Ygor';
+      } else if (cat.includes('contábil') || cat.includes('contabil')) {
+        novoResp = 'Ygor';
+      }
+
+      if (novoResp !== t.responsavel) {
+        alteradas++;
+      }
+
+      const etapasAtualizadas = t.etapas_processo?.map(ep => ({
+        ...ep,
+        responsavel: novoResp
+      }));
+
+      return {
+        ...t,
+        responsavel: novoResp,
+        etapas_processo: etapasAtualizadas || t.etapas_processo
+      };
+    });
+
+    saveTarefas(tarefasAtualizadas);
+
+    try {
+      localStorage.setItem('gestup_v3_resp_fiscal_guilherme_rh_ygor', 'true');
+    } catch {}
+
+    return { totalAlteradas: alteradas };
+  };
+
   // ================= GESTÃO DOCUMENTAL & PORTAL DO CLIENTE =================
   const addDocumentoPortal = (docData: Omit<DocumentoPortalCliente, 'id' | 'created_at'>) => {
     const novoDoc: DocumentoPortalCliente = {
@@ -1992,6 +2208,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const diaMeta = Math.max(1, diaVenc - 3);
           const dataPrazoLegal = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaVenc).padStart(2, '0')}`;
           const dataPrazoMeta = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaMeta).padStart(2, '0')}`;
+          const respObrigacao = getResponsavelPorDepartamento(cfg.departamento);
 
           const etapas = cfg.eh_processo && cfg.etapas_padrao
             ? cfg.etapas_padrao.map((ep, idx) => ({
@@ -1999,6 +2216,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 titulo: ep.titulo,
                 ordem: ep.ordem || (idx + 1),
                 data_limite: dataPrazoLegal,
+                responsavel: respObrigacao,
                 concluida: false,
                 arquivos: [],
                 cobrar_whatsapp: !!ep.cobrar_whatsapp,
@@ -2021,7 +2239,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             prioridade: 'Normal',
             cliente_id: cliente.id,
             cliente_nome: cliente.nome,
-            responsavel: cliente.responsavel || 'Guilherme',
+            responsavel: respObrigacao,
             data_prazo_meta: dataPrazoMeta,
             data_prazo_legal: dataPrazoLegal,
             categoria: cfg.departamento,
@@ -2092,6 +2310,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const diaMeta = Math.max(1, diaVenc - 3);
             const dataPrazoLegal = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaVenc).padStart(2, '0')}`;
             const dataPrazoMeta = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaMeta).padStart(2, '0')}`;
+            const respObrigacao = getResponsavelPorDepartamento(cfg.departamento);
 
             const etapas = cfg.eh_processo && cfg.etapas_padrao
               ? cfg.etapas_padrao.map((ep, idx) => ({
@@ -2099,6 +2318,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   titulo: ep.titulo,
                   ordem: ep.ordem || (idx + 1),
                   data_limite: dataPrazoLegal,
+                  responsavel: respObrigacao,
                   concluida: false,
                   arquivos: [],
                   cobrar_whatsapp: !!ep.cobrar_whatsapp,
@@ -2122,7 +2342,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               prioridade: 'Normal',
               cliente_id: cliente.id,
               cliente_nome: cliente.nome,
-              responsavel: cliente.responsavel || 'Guilherme',
+              responsavel: respObrigacao,
               data_prazo_meta: dataPrazoMeta,
               data_prazo_legal: dataPrazoLegal,
               categoria: cfg.departamento,
@@ -2187,6 +2407,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const diaMeta = Math.max(1, diaVenc - 3);
           const dataPrazoLegal = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaVenc).padStart(2, '0')}`;
           const dataPrazoMeta = `${anoNum}-${String(mesNum).padStart(2, '0')}-${String(diaMeta).padStart(2, '0')}`;
+          const respObrigacao = getResponsavelPorDepartamento(cfg.departamento);
 
           const etapas = cfg.eh_processo && cfg.etapas_padrao
             ? cfg.etapas_padrao.map((ep, idx) => ({
@@ -2194,6 +2415,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 titulo: ep.titulo,
                 ordem: ep.ordem || (idx + 1),
                 data_limite: dataPrazoLegal,
+                responsavel: respObrigacao,
                 concluida: false,
                 arquivos: [],
                 cobrar_whatsapp: !!ep.cobrar_whatsapp,
@@ -2217,7 +2439,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             prioridade: 'Normal',
             cliente_id: cliente.id,
             cliente_nome: cliente.nome,
-            responsavel: cliente.responsavel || 'Guilherme',
+            responsavel: respObrigacao,
             data_prazo_meta: dataPrazoMeta,
             data_prazo_legal: dataPrazoLegal,
             categoria: cfg.departamento,
@@ -2267,14 +2489,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateCliente(clienteId, { portal_acesso: credenciais }, `Credenciais de acesso ao portal do cliente atualizadas (${credenciais.email}).`);
   };
 
-  // ================= COLABORADORES =================
+  // ================= COLABORADORES & USUÁRIOS (CRUD) =================
   const addColaborador = (colaborador: Omit<Colaborador, 'id'>) => {
     const novo: Colaborador = { ...colaborador, id: `col-${Date.now()}` };
-    setColaboradores([...colaboradores, novo]);
+    saveColaboradores([...colaboradores, novo]);
   };
 
   const updateColaborador = (id: string, updates: Partial<Colaborador>) => {
-    setColaboradores(colaboradores.map(c => c.id === id ? { ...c, ...updates } : c));
+    const atualizados = colaboradores.map(c => c.id === id ? { ...c, ...updates } : c);
+    saveColaboradores(atualizados);
+  };
+
+  const deleteColaborador = (id: string) => {
+    const atualizados = colaboradores.filter(c => c.id !== id);
+    saveColaboradores(atualizados);
   };
 
   // ================= DECLARAÇÕES FISCAIS (CRUD) =================
@@ -3476,6 +3704,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         removerArquivoEtapa,
         configurarCobrancaWhatsAppEtapa,
         dispararCobrancaEtapaWhatsApp,
+        adicionarAtualizacaoSubprocesso,
+        prorrogarPrazoSubprocesso,
+        padronizarResponsaveisCarteira,
         adicionarRetornoClienteSubtarefa,
         documentosPortal,
         solicitacoesPortal,
@@ -3520,6 +3751,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         atualizarAcessoPortalCliente,
         addColaborador,
         updateColaborador,
+        deleteColaborador,
         addDeclaracao,
         updateDeclaracao,
         deleteDeclaracao,

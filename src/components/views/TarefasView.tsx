@@ -50,7 +50,8 @@ import {
   Trash2,
   Settings2,
   Download,
-  Plus
+  Plus,
+  Users
 } from 'lucide-react';
 
 interface TarefasViewProps {
@@ -80,6 +81,9 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     removerArquivoEtapa,
     configurarCobrancaWhatsAppEtapa,
     dispararCobrancaEtapaWhatsApp,
+    adicionarAtualizacaoSubprocesso,
+    prorrogarPrazoSubprocesso,
+    padronizarResponsaveisCarteira,
     obterModeloMensagemParaTarefa,
     formatarMensagemGuiaTarefa,
     anexarArquivoTarefa,
@@ -134,6 +138,12 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   const [novaEtapaDescricao, setNovaEtapaDescricao] = useState('');
   const [novaEtapaDataLimite, setNovaEtapaDataLimite] = useState('');
   const [novaEtapaCobrarWhatsApp, setNovaEtapaCobrarWhatsApp] = useState(true);
+
+  // NOVO: Atualizações & Prorrogação 24h de Subprocessos
+  const [etapaAtualizacaoTexto, setEtapaAtualizacaoTexto] = useState<Record<string, string>>({});
+  const [etapaProrrogandoId, setEtapaProrrogandoId] = useState<string | null>(null);
+  const [etapaJustificativa, setEtapaJustificativa] = useState<string>('');
+  const [etapaNovoPrazoCustom, setEtapaNovoPrazoCustom] = useState<string>('');
 
   // NOVO: Janela Suspensa de Configuração de Cobrança WhatsApp da Etapa
   const [cobrancaSuspensa, setCobrancaSuspensa] = useState<{
@@ -866,6 +876,20 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
           >
             <Calendar className="w-3.5 h-3.5 text-white" />
             <span>Lançar até Jan/2027</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const res = padronizarResponsaveisCarteira();
+              setFeedbackToast(`⚡ Responsáveis padronizados com sucesso! Fiscal → Guilherme | Pessoal/RH → Ygor (${res.totalAlteradas} ajustadas).`);
+              setTimeout(() => setFeedbackToast(null), 4000);
+            }}
+            title="Atualiza todas as tarefas: Fiscal para Guilherme e Pessoal/RH para Ygor"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-brand-blue border border-blue-200 text-xs font-bold transition-all shadow-sm"
+          >
+            <Users className="w-3.5 h-3.5 text-brand-blue" />
+            <span>Padronizar Responsáveis</span>
           </button>
         </div>
       </div>
@@ -2705,6 +2729,35 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                                       <Calendar className="w-3 h-3 text-amber-600" />
                                       Data Limite: {etapa.data_limite}
                                     </span>
+                                    {etapa.prorrogacoes_count ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-900 border border-orange-200 flex items-center gap-1">
+                                        <Clock className="w-3 h-3 text-orange-600" />
+                                        {etapa.prorrogacoes_count}x prorrogada
+                                      </span>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (etapaProrrogandoId === etapa.id) {
+                                          setEtapaProrrogandoId(null);
+                                        } else {
+                                          setEtapaProrrogandoId(etapa.id);
+                                          setEtapaJustificativa('');
+                                          try {
+                                            const d = new Date((etapa.data_limite || new Date().toISOString().split('T')[0]) + 'T12:00:00');
+                                            d.setDate(d.getDate() + 1);
+                                            setEtapaNovoPrazoCustom(d.toISOString().split('T')[0]);
+                                          } catch {
+                                            setEtapaNovoPrazoCustom('');
+                                          }
+                                        }
+                                      }}
+                                      className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 flex items-center gap-1 transition-all cursor-pointer shadow-2xs hover:shadow-xs"
+                                      title="Prorrogar prazo desta etapa em 24h mediante justificativa"
+                                    >
+                                      <Clock className="w-3 h-3 text-purple-600" />
+                                      <span>⏱️ Prorrogar 24h</span>
+                                    </button>
                                     {etapa.cobrar_whatsapp ? (
                                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 animate-pulse">
                                         <Bell className="w-3 h-3 text-emerald-600" />
@@ -2718,6 +2771,78 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                                   </>
                                 )}
                               </div>
+
+                              {/* Form Inline de Prorrogação de Prazo (+24h com Justificativa) */}
+                              {etapaProrrogandoId === etapa.id && (
+                                <div className="p-3 bg-purple-50/90 rounded-2xl border border-purple-200 space-y-2.5 mt-2 animate-in fade-in">
+                                  <div className="flex items-center justify-between text-xs font-bold text-purple-950">
+                                    <span className="flex items-center gap-1.5">
+                                      <Clock className="w-3.5 h-3.5 text-purple-600" />
+                                      <span>Prorrogação de Prazo (+24 horas)</span>
+                                    </span>
+                                    <span className="text-[11px] font-normal text-purple-800">
+                                      Prazo Atual: <strong>{etapa.data_limite}</strong> → Novo Prazo: <strong>{etapaNovoPrazoCustom}</strong>
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <div className="sm:col-span-1">
+                                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">Novo Prazo (+24h):</label>
+                                      <input
+                                        type="date"
+                                        value={etapaNovoPrazoCustom}
+                                        onChange={e => setEtapaNovoPrazoCustom(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 rounded-xl border border-purple-200 bg-white text-xs font-semibold"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">Justificativa da Prorrogação * (Obrigatória):</label>
+                                      <input
+                                        type="text"
+                                        placeholder="Ex: Cliente solicitou 24h para envio dos extratos / Instabilidade SEFAZ"
+                                        value={etapaJustificativa}
+                                        onChange={e => setEtapaJustificativa(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 rounded-xl border border-purple-200 bg-white text-xs"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center justify-end gap-2 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEtapaProrrogandoId(null)}
+                                      className="px-3 py-1 rounded-xl text-slate-600 hover:bg-slate-200/60 text-xs font-semibold"
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!etapaJustificativa.trim()) {
+                                          alert('Atenção: A justificativa é obrigatória para prorrogar o prazo do processo em 24h.');
+                                          return;
+                                        }
+                                        const res = prorrogarPrazoSubprocesso(
+                                          tarefaLive.id,
+                                          etapa.id,
+                                          etapaJustificativa.trim(),
+                                          etapaNovoPrazoCustom || undefined
+                                        );
+                                        if (res.sucesso) {
+                                          setEtapaProrrogandoId(null);
+                                          setEtapaJustificativa('');
+                                          setFeedbackToast(`⏰ Prazo da etapa prorrogado com sucesso para ${res.novoPrazo}!`);
+                                          setTimeout(() => setFeedbackToast(null), 3500);
+                                        }
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold shadow-xs flex items-center gap-1.5"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span>Confirmar Prorrogação (+24h)</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
 
                               {etapa.descricao && (
                                 <p className="text-slate-600 text-xs mt-0.5 leading-relaxed">{etapa.descricao}</p>
@@ -2795,6 +2920,107 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                             </div>
                           </div>
                         )}
+
+                        {/* STATUS & ATUALIZAÇÕES DO SUBPROCESSO (Anotações de andamento da equipe) */}
+                        <div className="mt-3 p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                              <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Status & Atualizações do Subprocesso ({etapa.atualizacoes?.length || 0})</span>
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              Notas internas & justificativas de prazos
+                            </span>
+                          </div>
+
+                          {/* Feed de Atualizações */}
+                          {etapa.atualizacoes && etapa.atualizacoes.length > 0 && (
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                              {etapa.atualizacoes.map(at => (
+                                <div
+                                  key={at.id}
+                                  className={`p-2.5 rounded-xl text-[11px] border shadow-2xs ${
+                                    at.tipo === 'Prorrogação'
+                                      ? 'bg-amber-50/80 border-amber-200 text-amber-950'
+                                      : 'bg-white border-slate-200/90 text-slate-800'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                                    <span className="font-bold flex items-center gap-1.5">
+                                      <span>👤 {at.autor}</span>
+                                      <span
+                                        className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                          at.tipo === 'Prorrogação'
+                                            ? 'bg-orange-100 text-orange-900 border border-orange-200'
+                                            : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                                        }`}
+                                      >
+                                        {at.tipo}
+                                      </span>
+                                    </span>
+                                    <span>🕒 {at.data}</span>
+                                  </div>
+                                  <p className="font-medium leading-relaxed">{at.texto}</p>
+                                  {at.justificativa && at.tipo === 'Prorrogação' && (
+                                    <div className="mt-1 pt-1 border-t border-amber-200/60 text-[10px] text-amber-900">
+                                      <strong>Justificativa da prorrogação:</strong> &ldquo;{at.justificativa}&rdquo;
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Campo para Escrever Atualização ou Novo Status */}
+                          <div className="flex items-center gap-2 pt-1">
+                            <input
+                              type="text"
+                              placeholder="Escreva uma nota de andamento ou atualização para esta etapa..."
+                              value={etapaAtualizacaoTexto[etapa.id] || ''}
+                              onChange={e =>
+                                setEtapaAtualizacaoTexto({
+                                  ...etapaAtualizacaoTexto,
+                                  [etapa.id]: e.target.value
+                                })
+                              }
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const txt = (etapaAtualizacaoTexto[etapa.id] || '').trim();
+                                  if (!txt) return;
+                                  adicionarAtualizacaoSubprocesso(tarefaLive.id, etapa.id, {
+                                    texto: txt,
+                                    autor: 'Guilherme',
+                                    tipo: 'Status'
+                                  });
+                                  setEtapaAtualizacaoTexto({ ...etapaAtualizacaoTexto, [etapa.id]: '' });
+                                  setFeedbackToast('📝 Atualização de status registrada no subprocesso!');
+                                  setTimeout(() => setFeedbackToast(null), 3000);
+                                }
+                              }}
+                              className="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs placeholder:text-slate-400 focus:outline-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const txt = (etapaAtualizacaoTexto[etapa.id] || '').trim();
+                                if (!txt) return;
+                                adicionarAtualizacaoSubprocesso(tarefaLive.id, etapa.id, {
+                                  texto: txt,
+                                  autor: 'Guilherme',
+                                  tipo: 'Status'
+                                });
+                                setEtapaAtualizacaoTexto({ ...etapaAtualizacaoTexto, [etapa.id]: '' });
+                                setFeedbackToast('📝 Atualização de status registrada no subprocesso!');
+                                setTimeout(() => setFeedbackToast(null), 3000);
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shrink-0 shadow-2xs flex items-center gap-1.5 transition-all"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>Registrar</span>
+                            </button>
+                          </div>
+                        </div>
 
                         {/* Linha 2: Arquivos Anexos da Etapa */}
                         <div className="mt-3 pt-3 border-t border-slate-100/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">

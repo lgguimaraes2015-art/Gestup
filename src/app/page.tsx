@@ -14,6 +14,7 @@ import { PortalClienteView } from '@/components/views/PortalClienteView';
 import { FinanceiroView } from '@/components/views/FinanceiroView';
 import { DashboardBIView } from '@/components/views/DashboardBIView';
 import { ConfiguracoesView } from '@/components/views/ConfiguracoesView';
+import { ColaboradoresView } from '@/components/views/ColaboradoresView';
 import { RadarFiscalView } from '@/components/views/RadarFiscalView';
 
 export default function Home() {
@@ -51,7 +52,9 @@ export default function Home() {
 
           {activeTab === 'financeiro' && <FinanceiroView />}
 
-          {(activeTab === 'configuracoes' || activeTab === 'colaboradores') && <ConfiguracoesView />}
+          {activeTab === 'colaboradores' && <ColaboradoresView />}
+
+          {activeTab === 'configuracoes' && <ConfiguracoesView />}
 
           {activeTab === 'radar-fiscal' && <RadarFiscalView />}
 

@@ -199,6 +199,17 @@ export interface RetornoClienteSubtarefa {
   arquivos: ArquivoEtapa[];
 }
 
+export interface SubprocessoAtualizacao {
+  id: string;
+  texto: string;
+  autor: string;
+  data: string;
+  tipo: 'Status' | 'Prorrogação' | 'Observação';
+  justificativa?: string;
+  prazo_anterior?: string;
+  novo_prazo?: string;
+}
+
 export interface EtapaProcessoTarefa {
   id: string;
   titulo: string;
@@ -213,6 +224,8 @@ export interface EtapaProcessoTarefa {
   cobrar_whatsapp: boolean;
   configuracao_cobranca?: ConfiguracaoCobrancaEtapa;
   retornos_cliente?: RetornoClienteSubtarefa[];
+  atualizacoes?: SubprocessoAtualizacao[];
+  prorrogacoes_count?: number;
 }
 
 export interface TarefaComentario {

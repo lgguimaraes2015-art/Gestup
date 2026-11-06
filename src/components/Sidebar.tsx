@@ -138,8 +138,13 @@ export function Sidebar() {
       title: 'Administração',
       items: [
         {
+          id: 'colaboradores',
+          label: 'Usuários & Equipe',
+          icon: Users
+        },
+        {
           id: 'configuracoes',
-          label: 'Configurações & Equipe',
+          label: 'Configurações & WhatsApp',
           icon: Settings
         }
       ]

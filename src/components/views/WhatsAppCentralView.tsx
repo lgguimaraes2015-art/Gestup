@@ -79,24 +79,33 @@ export function WhatsAppCentralView() {
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Gateway WhatsApp</span>
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-brand-green text-[10px] font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
-                CONECTADO
-              </span>
+              {whatsAppConfig.conectado ? (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-brand-green text-[10px] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
+                  CONECTADO
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold" title={whatsAppConfig.ultima_sincronizacao}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  API OFFLINE (WEB ATIVO)
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3 mt-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-brand-green flex items-center justify-center">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${whatsAppConfig.conectado ? 'bg-emerald-50 text-brand-green' : 'bg-amber-50 text-amber-700'}`}>
                 <Smartphone className="w-5 h-5" />
               </div>
               <div>
-                <p className="font-bold text-slate-900 text-sm">{whatsAppConfig.numero_conectado}</p>
+                <p className="font-bold text-slate-900 text-sm">{whatsAppConfig.numero_conectado || '+55 (19) 99208-0639'}</p>
                 <p className="text-[11px] text-slate-500">Instância: {whatsAppConfig.nome_instancia}</p>
               </div>
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
             <span>Provedor: <strong>{whatsAppConfig.api_provider}</strong></span>
-            <span className="text-brand-green font-semibold">Latência: 120ms</span>
+            <span className={whatsAppConfig.conectado ? 'text-brand-green font-semibold' : 'text-amber-700 font-semibold'}>
+              {whatsAppConfig.conectado ? 'Latência: 120ms' : 'Fallback: WhatsApp Web'}
+            </span>
           </div>
         </div>
 

@@ -132,6 +132,19 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   const [concluirMensagemPreview, setConcluirMensagemPreview] = useState<string>('');
   const [isDraggingGuia, setIsDraggingGuia] = useState<boolean>(false);
 
+  // Modal de Fallback de Disparo WhatsApp Web (quando Evolution API estiver offline ou der erro)
+  const [modalWhatsAppFallback, setModalWhatsAppFallback] = useState<{
+    clienteNome: string;
+    telefone: string;
+    mensagem: string;
+    fallbackUrl: string;
+    linkPortalGuia?: string;
+    motivo?: string;
+  } | null>(null);
+  const [fallbackTelefoneInput, setFallbackTelefoneInput] = useState('');
+  const [copiouMsgFallback, setCopiouMsgFallback] = useState(false);
+  const [copiouLinkFallback, setCopiouLinkFallback] = useState(false);
+
   // NOVO: Gestão de Processos & Etapas
   const [processoModalTarefa, setProcessoModalTarefa] = useState<Tarefa | null>(null);
   const [novaEtapaTitulo, setNovaEtapaTitulo] = useState('');
@@ -668,7 +681,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   }, [concluirModalTarefa, concluirEhPagamento, concluirDataVencimento, concluirValor, concluirArquivoNome, formatarMensagemGuiaTarefa, concluirEditandoMensagem]);
 
   // Confirmar Conclusão com Guia e Notificações Automáticas
-  const handleConfirmarConclusao = (e: React.FormEvent) => {
+  const handleConfirmarConclusao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!concluirModalTarefa) return;
 
@@ -682,7 +695,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
     const valorNum = concluirValor ? parseFloat(concluirValor.replace(',', '.')) : undefined;
 
-    concluirTarefa(concluirModalTarefa.id, {
+    const resultado = await concluirTarefa(concluirModalTarefa.id, {
       ehPagamento,
       arquivoNome: ehPagamento ? (concluirArquivoNome || 'Guia_Pagamento.pdf') : undefined,
       arquivoConteudo: ehPagamento ? concluirArquivoConteudo : undefined,
@@ -694,19 +707,35 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
         : undefined
     });
 
-    const envioWhats = ehPagamento && cliente?.receber_guias_whatsapp !== false;
-    const msgFeedback = ehPagamento
-      ? `🎉 Tarefa concluída! Guia enviada por E-mail ${envioWhats ? 'e WhatsApp' : ''} para ${cliente?.nome || concluirModalTarefa.cliente_nome}.`
-      : `✅ Tarefa concluída com sucesso! (Modo Clean: movida para concluídas)`;
-
+    const nomeCli = cliente?.nome || concluirModalTarefa.cliente_nome;
     setConcluirModalTarefa(null);
     setConcluirArquivoNome('');
     setConcluirArquivoConteudo('');
     setConcluirArquivoTamanho('');
     setConcluirEditandoMensagem(false);
     if (guiaFileInputRef.current) guiaFileInputRef.current.value = '';
-    setFeedbackToast(msgFeedback);
-    setTimeout(() => setFeedbackToast(null), 5000);
+
+    if (ehPagamento) {
+      if (resultado.whatsAppEnviado) {
+        setFeedbackToast(`🎉 Tarefa concluída! Guia enviada via robô do WhatsApp para ${nomeCli}.`);
+        setTimeout(() => setFeedbackToast(null), 5000);
+      } else {
+        // Se a Evolution API falhou (ex: Railway 404) ou se o robô está offline, abre modal de envio direto
+        const telDest = resultado.telefoneDestinatario || cliente?.whatsapp || cliente?.telefone || '';
+        setFallbackTelefoneInput(telDest);
+        setModalWhatsAppFallback({
+          clienteNome: nomeCli,
+          telefone: telDest,
+          mensagem: resultado.mensagemTexto || '',
+          fallbackUrl: resultado.fallbackWhatsAppWebUrl || '',
+          linkPortalGuia: resultado.linkPortalGuia,
+          motivo: resultado.erroWhats || 'Robô da Evolution API offline (HTTP 404 no Railway)'
+        });
+      }
+    } else {
+      setFeedbackToast(`✅ Tarefa concluída com sucesso! (Modo Clean: movida para concluídas)`);
+      setTimeout(() => setFeedbackToast(null), 5000);
+    }
   };
 
   // Confirmar Prorrogação
@@ -1812,6 +1841,172 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL DE FALLBACK DE DISPARO VIA WHATSAPP WEB */}
+      {modalWhatsAppFallback && (() => {
+        let cleanTel = fallbackTelefoneInput.replace(/\D/g, '');
+        if (cleanTel.length === 10 || cleanTel.length === 11) {
+          cleanTel = `55${cleanTel}`;
+        }
+        const linkWhatsAppWeb = cleanTel.length >= 10
+          ? `https://api.whatsapp.com/send?phone=${cleanTel}&text=${encodeURIComponent(modalWhatsAppFallback.mensagem)}`
+          : '';
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-emerald-50">
+                <div className="flex items-center gap-2.5 text-slate-900 font-bold text-sm">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-brand-green flex items-center justify-center">
+                    <Smartphone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span>Disparo no WhatsApp Web / Desktop</span>
+                    <p className="text-[10px] text-slate-500 font-normal">Envio direto para o celular do cliente</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalWhatsAppFallback(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-4 text-xs">
+                {/* Alerta explicativo */}
+                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold text-[11px]">Aviso de Envio:</p>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      O servidor da Evolution API no Railway está offline (HTTP 404). A tarefa foi concluída e a Guia oficial gerada.
+                      Clique no botão abaixo para abrir a mensagem preenchida no WhatsApp Web e enviar ao cliente agora!
+                    </p>
+                  </div>
+                </div>
+
+                {/* Dados do Cliente e Telefone */}
+                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700">🏢 Empresa / Cliente:</span>
+                    <span className="text-xs font-black text-slate-900">{modalWhatsAppFallback.clienteNome}</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Número do WhatsApp com DDD:
+                    </label>
+                    <input
+                      type="text"
+                      value={fallbackTelefoneInput}
+                      onChange={e => setFallbackTelefoneInput(e.target.value)}
+                      placeholder="Ex: 19992080639"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-mono font-bold text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-green"
+                    />
+                    {cleanTel.length < 10 && (
+                      <p className="text-[10px] text-red-500 mt-1">
+                        * Digite o telefone com DDD para abrir a conversa no WhatsApp.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pré-visualização do Balão de WhatsApp */}
+                <div className="space-y-1.5">
+                  <span className="font-bold text-[11px] text-slate-700">Mensagem Oficial Pronta para Envio:</span>
+                  <div className="bg-[#EFEAE2] p-3.5 rounded-2xl border border-slate-200 max-h-44 overflow-y-auto">
+                    <div className="bg-[#D9FDD3] text-slate-900 p-3 rounded-xl shadow-2xs text-[11px] whitespace-pre-wrap leading-relaxed">
+                      {modalWhatsAppFallback.mensagem}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ações de Envio e Cópia */}
+                <div className="space-y-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={cleanTel.length < 10}
+                    onClick={() => {
+                      if (linkWhatsAppWeb) {
+                        window.open(linkWhatsAppWeb, '_blank');
+                        setFeedbackToast('🚀 Abrindo WhatsApp com mensagem preenchida para envio!');
+                        setTimeout(() => setFeedbackToast(null), 4000);
+                        setModalWhatsAppFallback(null);
+                      }
+                    }}
+                    className={`w-full py-3.5 px-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition-all ${
+                      cleanTel.length >= 10
+                        ? 'bg-brand-green hover:bg-emerald-600 text-white cursor-pointer active:scale-[0.99]'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span>Abrir no WhatsApp Web e Enviar Agora</span>
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(modalWhatsAppFallback.mensagem);
+                        setCopiouMsgFallback(true);
+                        setTimeout(() => setCopiouMsgFallback(false), 3000);
+                      }}
+                      className="py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      {copiouMsgFallback ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-brand-green" />
+                          <span>Texto Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Copiar Mensagem</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (modalWhatsAppFallback.linkPortalGuia) {
+                          navigator.clipboard.writeText(modalWhatsAppFallback.linkPortalGuia);
+                          setCopiouLinkFallback(true);
+                          setTimeout(() => setCopiouLinkFallback(false), 3000);
+                        }
+                      }}
+                      className="py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      {copiouLinkFallback ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-brand-green" />
+                          <span>Link Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Copiar Link da Guia</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setModalWhatsAppFallback(null)}
+                    className="w-full py-1 text-center text-[11px] font-semibold text-slate-400 hover:text-slate-600"
+                  >
+                    Fechar (Concluir sem enviar agora)
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         );

@@ -14,34 +14,54 @@ export async function POST(req: NextRequest) {
       instanceName = 'gestup'
     } = body;
 
-    if (!number || (!text && !media)) {
-      return NextResponse.json(
-        { success: false, error: 'Número e mensagem ou documento são obrigatórios.' },
-        { status: 400 }
-      );
-    }
-
     // Limpa e formata o número brasileiro (garantindo DDI 55)
-    let cleanNumber = String(number).replace(/\D/g, '');
+    let cleanNumber = String(number || '').replace(/\D/g, '');
     if (cleanNumber.length === 10 || cleanNumber.length === 11) {
       cleanNumber = `55${cleanNumber}`;
     }
 
-    // Normaliza a URL da API
-    const baseUrl = String(apiUrl).trim().replace(/\/+$/, '');
-    const cleanInstance = encodeURIComponent(instanceName.trim());
+    const fallbackUrl = cleanNumber
+      ? `https://api.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text || '')}`
+      : undefined;
 
-    // Se houver arquivo anexo (mídia), tenta enviar via sendMedia primeiro
-    if (media) {
+    if (!cleanNumber || cleanNumber.length < 10) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Número de telefone inválido ou não informado.',
+          fallbackUrl
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!text && !media) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Mensagem ou documento são obrigatórios para o envio.',
+          fallbackUrl
+        },
+        { status: 400 }
+      );
+    }
+
+    // Normaliza a URL da API
+    const baseUrl = String(apiUrl || '').trim().replace(/\/+$/, '');
+    const cleanInstance = encodeURIComponent((instanceName || 'gestup').trim());
+    const cleanKey = String(apiKey || '').trim();
+
+    // 1. Se houver arquivo anexo (mídia), tenta enviar via sendMedia primeiro
+    if (media && baseUrl) {
       try {
         const mediaEndpoint = `${baseUrl}/message/sendMedia/${cleanInstance}`;
-        console.log(`[WhatsApp API] Tentando enviar documento/mídia para ${cleanNumber} via ${mediaEndpoint}`);
+        console.log(`[WhatsApp API] Tentando enviar documento para ${cleanNumber} via ${mediaEndpoint}`);
 
         const mediaResponse = await fetch(mediaEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'apikey': apiKey.trim()
+            'apikey': cleanKey
           },
           body: JSON.stringify({
             number: cleanNumber,
@@ -56,7 +76,7 @@ export async function POST(req: NextRequest) {
 
         const mediaData = await mediaResponse.json().catch(() => null);
 
-        if (mediaResponse.ok) {
+        if (mediaResponse.ok && !mediaData?.error) {
           console.log(`[WhatsApp API] Mídia enviada com sucesso para ${cleanNumber}`);
           return NextResponse.json({
             success: true,
@@ -66,52 +86,79 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        console.warn('[WhatsApp API] Falha no envio de mídia, tentando fallback para sendText:', mediaData);
+        console.warn('[WhatsApp API] Falha no envio de mídia, tentando fallback para sendText:', mediaResponse.status, mediaData);
       } catch (mediaErr) {
         console.warn('[WhatsApp API] Exceção no envio de mídia, fallback para sendText:', mediaErr);
       }
     }
 
-    // Envio de texto (padrão ou fallback)
-    const textEndpoint = `${baseUrl}/message/sendText/${cleanInstance}`;
-    console.log(`[WhatsApp API] Disparando mensagem de texto para ${cleanNumber} via ${textEndpoint}`);
+    // 2. Envio de texto (padrão ou fallback de mídia)
+    if (baseUrl) {
+      const textEndpoint = `${baseUrl}/message/sendText/${cleanInstance}`;
+      console.log(`[WhatsApp API] Disparando mensagem de texto para ${cleanNumber} via ${textEndpoint}`);
 
-    const response = await fetch(textEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': apiKey.trim()
-      },
-      body: JSON.stringify({
-        number: cleanNumber,
-        text: text,
-        delay: 1200
-      })
-    });
+      try {
+        const response = await fetch(textEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': cleanKey
+          },
+          body: JSON.stringify({
+            number: cleanNumber,
+            text: text,
+            delay: 1200
+          })
+        });
 
-    const data = await response.json().catch(() => null);
+        const data = await response.json().catch(() => null);
 
-    if (!response.ok) {
-      console.error('[WhatsApp API] Erro ao enviar mensagem de texto:', response.status, data);
-      return NextResponse.json(
-        {
+        if (response.ok && !data?.error) {
+          return NextResponse.json({
+            success: true,
+            messageId: data?.key?.id,
+            data
+          });
+        }
+
+        // Se o Railway retornou 404 (Application not found / Serviço desativado)
+        const erroMsg = data?.message || data?.response?.message || data?.error || `Falha HTTP ${response.status}`;
+        console.error('[WhatsApp API] Erro ao enviar mensagem de texto:', response.status, erroMsg);
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: response.status === 404
+              ? `Servidor da Evolution API no Railway não encontrado (HTTP 404 - Application not found). O serviço pode estar desativado ou com novo domínio.`
+              : erroMsg,
+            statusHttp: response.status,
+            fallbackUrl,
+            details: data
+          },
+          { status: 200 } // Retorna 200 com success: false para o frontend tratar amigavelmente
+        );
+      } catch (fetchErr: any) {
+        console.error('[WhatsApp API] Falha de conexão com o servidor da API:', fetchErr);
+        return NextResponse.json({
           success: false,
-          error: data?.response?.message || data?.error || `Falha HTTP ${response.status}`,
-          details: data
-        },
-        { status: response.status }
-      );
+          error: `Não foi possível conectar ao servidor da Evolution API (${baseUrl}): ${fetchErr.message}`,
+          fallbackUrl
+        });
+      }
     }
 
     return NextResponse.json({
-      success: true,
-      messageId: data?.key?.id,
-      data
+      success: false,
+      error: 'URL da Evolution API não configurada.',
+      fallbackUrl
     });
   } catch (error: any) {
     console.error('[WhatsApp API] Erro interno:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Erro interno no servidor' },
+      {
+        success: false,
+        error: error.message || 'Erro interno no servidor de envio'
+      },
       { status: 500 }
     );
   }

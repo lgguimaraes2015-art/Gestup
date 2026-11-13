@@ -73,14 +73,18 @@ async function checkStatus(apiUrl: string, apiKey: string, instanceName: string)
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    const errorMsg = data?.message || data?.error || `HTTP ${response.status}`;
     return NextResponse.json(
       {
         success: false,
         state: 'disconnected',
-        error: data?.error || `HTTP ${response.status}`,
+        connected: false,
+        error: response.status === 404
+          ? 'Servidor da Evolution API no Railway não encontrado (HTTP 404 - Application not found). O serviço pode estar pausado ou a URL foi alterada.'
+          : errorMsg,
         details: data
       },
-      { status: response.status }
+      { status: 200 }
     );
   }
 

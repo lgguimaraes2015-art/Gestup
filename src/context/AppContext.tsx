@@ -119,7 +119,17 @@ interface AppContextType {
       valor?: number;
       mensagemPersonalizada?: string;
     }
-  ) => void;
+  ) => Promise<{
+    sucesso: boolean;
+    ehPagamento: boolean;
+    whatsAppEnviado: boolean;
+    clienteNome: string;
+    telefoneDestinatario?: string;
+    mensagemTexto?: string;
+    linkPortalGuia?: string;
+    fallbackWhatsAppWebUrl?: string;
+    erroWhats?: string;
+  }>;
   prorrogarTarefa: (id: string, novoPrazoMeta: string, motivo: string) => void;
   adicionarComentarioTarefa: (id: string, autor: string, texto: string) => void;
 
@@ -1038,8 +1048,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             try { localStorage.setItem('gestup_v2_whatsapp_config', JSON.stringify(updated)); } catch {}
             return updated;
           });
+        } else {
+          setWhatsAppConfig(prev => {
+            const updated = {
+              ...prev,
+              conectado: false,
+              status: 'DISCONNECTED' as const,
+              ultima_sincronizacao: data?.error || 'Offline (Servidor da Evolution API não encontrado)'
+            };
+            try { localStorage.setItem('gestup_v2_whatsapp_config', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
         }
       } catch (err) {
+        setWhatsAppConfig(prev => {
+          const updated = {
+            ...prev,
+            conectado: false,
+            status: 'DISCONNECTED' as const,
+            ultima_sincronizacao: 'Falha de conexão com a API'
+          };
+          try { localStorage.setItem('gestup_v2_whatsapp_config', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
         console.warn('Verificação de status do WhatsApp:', err);
       }
     };
@@ -1298,6 +1329,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return modelosMensagens.find(m => m.tipo_chave === 'padrao') || modelosMensagens[0] || initialModelosMensagens[0];
   };
 
+  // Domínio público seguro para links enviados via WhatsApp ao cliente (evita localhost)
+  const getDominioPublicoSeguro = () => {
+    const custom = whatsAppConfig.dominio_publico?.trim();
+    if (custom && !custom.includes('localhost') && !custom.includes('127.0.0.1')) {
+      return custom.replace(/\/+$/, '');
+    }
+    if (typeof window !== 'undefined') {
+      const origin = window.location.origin;
+      if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.includes(':3000')) {
+        return origin;
+      }
+    }
+    return 'https://gestup.vercel.app';
+  };
+
   const formatarMensagemGuiaTarefa = (
     tarefa: Tarefa,
     dadosGuia: { dataVencimento?: string; valor?: number; arquivoNome?: string },
@@ -1317,7 +1363,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const nomeArq = dadosGuia.arquivoNome || 'Guia_Pagamento.pdf';
     const contato = nomeContato || cliente?.nome || 'Prezado Cliente';
 
-    const baseUrl = whatsAppConfig.dominio_publico || (typeof window !== 'undefined' ? window.location.origin : 'https://gestup.vercel.app');
+    const baseUrl = getDominioPublicoSeguro();
     const link = `${baseUrl}/portal/guia?id=${tarefa.id}&arquivo=${encodeURIComponent(nomeArq)}&comp=${encodeURIComponent(tarefa.competencia)}&cli=${encodeURIComponent(nomeEmpresa)}&venc=${encodeURIComponent(vencFormatado)}&val=${encodeURIComponent(dadosGuia.valor || '')}&tipo=${encodeURIComponent(tarefa.titulo)}`;
 
     let texto = modelo.texto_template;
@@ -1354,7 +1400,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateTarefa(tarefaId, { arquivos_anexos: lista });
   };
 
-  const concluirTarefa = (
+  const concluirTarefa = async (
     id: string,
     dadosGuia?: {
       ehPagamento: boolean;
@@ -1367,19 +1413,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   ) => {
     const tarefa = tarefas.find(t => t.id === id);
-    if (!tarefa) return;
+    if (!tarefa) {
+      return {
+        sucesso: false,
+        ehPagamento: false,
+        whatsAppEnviado: false,
+        clienteNome: '',
+        erroWhats: 'Tarefa não encontrada'
+      };
+    }
 
     const cliente = clientes.find(c => c.id === tarefa.cliente_id);
     let guiaInfo = undefined;
+    let houveEnvioSucesso = false;
+    let fallbackWhatsAppWebUrl = '';
+    let msgFinalWhats = '';
+    let telFinalWhats = '';
+    const nomeClienteAlvo = cliente?.nome || tarefa.cliente_nome;
 
     if (dadosGuia?.ehPagamento && dadosGuia.arquivoNome && dadosGuia.dataVencimento) {
       const enviarWhats = cliente?.receber_guias_whatsapp !== false;
       const clienteWhats = cliente?.whatsapp || cliente?.telefone || '';
       const clienteEmail = cliente?.email || '';
 
-      const baseUrl = whatsAppConfig.dominio_publico || (typeof window !== 'undefined' ? window.location.origin : 'https://gestup.vercel.app');
+      const baseUrl = getDominioPublicoSeguro();
       const nomeArquivoGuia = dadosGuia.arquivoNome || 'guia.pdf';
-      const linkPortalGuia = `${baseUrl}/portal/guia?id=${tarefa.id}&arquivo=${encodeURIComponent(nomeArquivoGuia)}&comp=${encodeURIComponent(tarefa.competencia)}&cli=${encodeURIComponent(cliente?.nome || tarefa.cliente_nome)}&venc=${encodeURIComponent(dadosGuia.dataVencimento)}&val=${encodeURIComponent(dadosGuia.valor || '')}&tipo=${encodeURIComponent(tarefa.titulo)}`;
+      const linkPortalGuia = `${baseUrl}/portal/guia?id=${tarefa.id}&arquivo=${encodeURIComponent(nomeArquivoGuia)}&comp=${encodeURIComponent(tarefa.competencia)}&cli=${encodeURIComponent(nomeClienteAlvo)}&venc=${encodeURIComponent(dadosGuia.dataVencimento)}&val=${encodeURIComponent(dadosGuia.valor || '')}&tipo=${encodeURIComponent(tarefa.titulo)}`;
+
+      // 1. Salva a guia no servidor central (/api/guias) para estar acessível em qualquer dispositivo
+      try {
+        fetch('/api/guias', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: tarefa.id,
+            arquivoNome: nomeArquivoGuia,
+            arquivoConteudo: dadosGuia.arquivoConteudo,
+            arquivoTamanho: dadosGuia.arquivoTamanho,
+            cliente: nomeClienteAlvo,
+            competencia: tarefa.competencia,
+            valor: dadosGuia.valor,
+            vencimento: dadosGuia.dataVencimento,
+            tipo: tarefa.titulo
+          })
+        }).catch(err => console.warn('[App] Aviso ao salvar guia no servidor:', err));
+      } catch (err) {}
 
       guiaInfo = {
         arquivo_nome: nomeArquivoGuia,
@@ -1399,9 +1477,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (enviarWhats) {
         const contatosAlvo = cliente?.contatos_notificacao?.length
           ? cliente.contatos_notificacao
-          : [{ id: 'padrao', nome: cliente?.nome || 'Cliente', telefoneOuGrupo: clienteWhats, tipo: 'Individual' as const, principal: true }];
+          : [{ id: 'padrao', nome: nomeClienteAlvo, telefoneOuGrupo: clienteWhats, tipo: 'Individual' as const, principal: true }];
 
-        contatosAlvo.forEach(ct => {
+        for (const ct of contatosAlvo) {
           const msgTexto = dadosGuia.mensagemPersonalizada
             ? dadosGuia.mensagemPersonalizada
             : formatarMensagemGuiaTarefa(
@@ -1414,9 +1492,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 ct.nome
               );
 
-          enviarMensagemWhatsApp(
+          msgFinalWhats = msgTexto;
+          telFinalWhats = ct.telefoneOuGrupo;
+
+          let cleanTel = (ct.telefoneOuGrupo || '').replace(/\D/g, '');
+          if (cleanTel.length === 10 || cleanTel.length === 11) {
+            cleanTel = `55${cleanTel}`;
+          }
+
+          if (cleanTel.length >= 10) {
+            fallbackWhatsAppWebUrl = `https://api.whatsapp.com/send?phone=${cleanTel}&text=${encodeURIComponent(msgTexto)}`;
+          }
+
+          const resultadoOk = await enviarMensagemWhatsApp(
             'Cliente',
-            `${cliente?.nome || tarefa.cliente_nome} (${ct.nome})`,
+            `${nomeClienteAlvo} (${ct.nome})`,
             ct.telefoneOuGrupo,
             'Documento Pendente',
             msgTexto,
@@ -1426,7 +1516,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               fileName: nomeArquivoGuia
             }
           );
-        });
+
+          if (resultadoOk) {
+            houveEnvioSucesso = true;
+          }
+        }
       }
     }
 
@@ -1449,6 +1543,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       guia_pagamento: guiaInfo,
       arquivos_anexos: novosAnexos
     });
+
+    return {
+      sucesso: true,
+      ehPagamento: Boolean(dadosGuia?.ehPagamento),
+      whatsAppEnviado: houveEnvioSucesso,
+      clienteNome: nomeClienteAlvo,
+      telefoneDestinatario: telFinalWhats,
+      mensagemTexto: msgFinalWhats,
+      linkPortalGuia: guiaInfo?.arquivo_url,
+      fallbackWhatsAppWebUrl,
+      erroWhats: !houveEnvioSucesso && dadosGuia?.ehPagamento
+        ? 'A Evolution API não conseguiu entregar a mensagem (servidor offline ou retorno 404). Você pode disparar diretamente pelo WhatsApp Web.'
+        : undefined
+    };
   };
 
   const prorrogarTarefa = (id: string, novoPrazoMeta: string, motivo: string) => {
@@ -1654,7 +1762,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .replace(/\{data_limite\}/g, etapa.data_limite || tarefa.data_prazo_meta);
 
     // Gera o link de retorno do processo para o cliente comentar ou anexar documentos
-    const baseUrl = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : 'https://gestup.vercel.app';
+    const baseUrl = getDominioPublicoSeguro();
     const linkRetornoProcesso = `${baseUrl}/portal/processo?t=${tarefa.id}&e=${etapa.id}`;
 
     if (!textoMsg.includes('/portal/processo')) {
@@ -3478,15 +3586,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       destinatario_tipo: destinatarioTipo,
       destinatario_nome: destinatarioNome,
-      telefone: cleanNumber || '5511999999999',
+      telefone: cleanNumber || telefone || 'Não informado',
       tipo_notificacao: tipoNotificacao,
       mensagem: texto,
-      status: 'Entregue',
+      status: 'Fila',
       data_envio: new Date().toLocaleString('pt-BR'),
       referencia_id: referenciaId
     };
 
     let sucessoEnvio = false;
+
+    if (!cleanNumber || cleanNumber.length < 10) {
+      novaMensagem.status = 'Falha';
+      setWhatsAppMensagens(prev => [novaMensagem, ...prev]);
+      return false;
+    }
 
     // Disparo real via API Route do Next.js (Server-side, zero problemas de CORS)
     try {
@@ -3509,9 +3623,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         sucessoEnvio = true;
         novaMensagem.status = 'Entregue';
       } else {
+        novaMensagem.status = 'Falha';
         console.warn('[WhatsApp] Retorno API não foi sucesso:', data?.error);
+        if (data?.statusHttp === 404 || String(data?.error).includes('404')) {
+          atualizarWhatsAppConfig({
+            conectado: false,
+            status: 'DISCONNECTED',
+            ultima_sincronizacao: 'Servidor Evolution API offline (HTTP 404 no Railway)'
+          });
+        }
       }
     } catch (err) {
+      novaMensagem.status = 'Falha';
       console.error('[WhatsApp] Falha ao chamar rota /api/whatsapp/send:', err);
     }
 
@@ -3550,11 +3673,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
         return 'open';
       } else {
-        return data?.state || 'disconnected';
+        atualizarWhatsAppConfig({
+          conectado: false,
+          status: 'DISCONNECTED',
+          ultima_sincronizacao: data?.error || 'Servidor offline / 404'
+        });
+        return 'close';
       }
     } catch (err) {
-      console.warn('Erro ao checar status:', err);
-      return 'error';
+      atualizarWhatsAppConfig({
+        conectado: false,
+        status: 'DISCONNECTED',
+        ultima_sincronizacao: 'Falha de conexão com a API'
+      });
+      return 'close';
     }
   };
 

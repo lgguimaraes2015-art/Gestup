@@ -26,6 +26,7 @@ import {
   Sparkles,
   RefreshCw,
   AlertTriangle,
+  AlertCircle,
   ShieldCheck,
   HelpCircle,
   Check,
@@ -87,6 +88,9 @@ export function ConfiguracoesView() {
   const [instanciaInput, setInstanciaInput] = useState(whatsAppConfig.nome_instancia || 'gestup');
   const [dominioPublicoInput, setDominioPublicoInput] = useState(whatsAppConfig.dominio_publico || '');
   const [salvandoCredenciais, setSalvandoCredenciais] = useState(false);
+  const [statusTesteConexao, setStatusTesteConexao] = useState<{ testado: boolean; ok: boolean; mensagem: string } | null>(null);
+  const [testandoConexao, setTestandoConexao] = useState(false);
+  const [linkSandboxWeb, setLinkSandboxWeb] = useState('');
 
   // Modal Novo Colaborador
   const [modalNovo, setModalNovo] = useState(false);
@@ -924,7 +928,72 @@ export function ConfiguracoesView() {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-1">
+              {/* Feedback de Teste de Conexão com a API */}
+              {statusTesteConexao && (
+                <div className={`p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 animate-in fade-in ${
+                  statusTesteConexao.ok
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}>
+                  {statusTesteConexao.ok ? (
+                    <Check className="w-4 h-4 text-brand-green shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <p className="font-bold">{statusTesteConexao.ok ? 'Servidor Conectado com Sucesso!' : 'Diagnóstico da Conexão:'}</p>
+                    <p className="mt-0.5 leading-relaxed">{statusTesteConexao.mensagem}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={testandoConexao}
+                  onClick={async () => {
+                    setTestandoConexao(true);
+                    setStatusTesteConexao(null);
+                    try {
+                      const res = await fetch('/api/whatsapp/status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          apiUrl: apiUrlInput.trim(),
+                          apiKey: apiKeyInput.trim(),
+                          instanceName: instanciaInput.trim()
+                        })
+                      });
+                      const data = await res.json();
+                      if (data?.success && data?.state === 'open') {
+                        setStatusTesteConexao({
+                          testado: true,
+                          ok: true,
+                          mensagem: `Instância "${data.instanceName}" online e conectada! Número ativo: ${data.ownerFormatted || 'Conectado'}.`
+                        });
+                      } else {
+                        setStatusTesteConexao({
+                          testado: true,
+                          ok: false,
+                          mensagem: data?.error || 'Servidor da Evolution API retornou erro ou 404 no Railway. O sistema continuará permitindo envio direto via WhatsApp Web normalmente.'
+                        });
+                      }
+                    } catch (err: any) {
+                      setStatusTesteConexao({
+                        testado: true,
+                        ok: false,
+                        mensagem: `Não foi possível conectar ao servidor: ${err.message}`
+                      });
+                    } finally {
+                      setTestandoConexao(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testandoConexao ? 'animate-spin text-brand-blue' : ''}`} />
+                  <span>{testandoConexao ? 'Testando Conexão...' : 'Testar Conexão com a API'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -985,7 +1054,18 @@ export function ConfiguracoesView() {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-1">
+              <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                {linkSandboxWeb && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(linkSandboxWeb, '_blank')}
+                    className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs hover:bg-emerald-100 flex items-center gap-1.5 transition-all"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-brand-green" />
+                    <span>Abrir Envio no WhatsApp Web</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={async () => {
@@ -993,16 +1073,21 @@ export function ConfiguracoesView() {
                       alert('Digite o número para o envio.');
                       return;
                     }
-                    setToastFeedback('⏳ Enviando mensagem para o WhatsApp via Railway...');
+                    setToastFeedback('⏳ Enviando mensagem para o WhatsApp...');
                     const ok = await enviarMensagemWhatsApp('Cliente', 'Teste Manual', testeTelefone, 'Lembrete Prazo', testeMensagem);
+                    let cleanNum = testeTelefone.replace(/\D/g, '');
+                    if (cleanNum.length === 10 || cleanNum.length === 11) cleanNum = `55${cleanNum}`;
+                    const webUrl = `https://api.whatsapp.com/send?phone=${cleanNum}&text=${encodeURIComponent(testeMensagem)}`;
+                    setLinkSandboxWeb(webUrl);
+
                     if (ok) {
                       setToastFeedback(`🎉 Mensagem ENTREGUE com sucesso para ${testeTelefone}! Verifique seu celular.`);
                     } else {
-                      setToastFeedback(`⚠️ O envio foi disparado. Se não chegar em instantes, verifique o número ou a sessão.`);
+                      setToastFeedback(`⚠️ O robô da API não entregou (servidor offline/404). Você pode abrir pelo botão WhatsApp Web ao lado.`);
                     }
                     setTimeout(() => setToastFeedback(null), 5000);
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition-all"
+                  className="px-5 py-2.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition-all ml-auto"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Enviar Mensagem de Teste Agora</span>

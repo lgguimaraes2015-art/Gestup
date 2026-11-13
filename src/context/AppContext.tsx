@@ -57,7 +57,8 @@ import {
   initialModelosMensagens,
   initialDocumentosPortal,
   initialSolicitacoesPortal,
-  tarefaRegistroSamiraPadrao
+  tarefaRegistroSamiraPadrao,
+  rawInitialTarefas
 } from '@/lib/mockData';
 import {
   obterCompetenciaAtual,
@@ -304,6 +305,7 @@ interface AppContextType {
   gerarTarefasRecorrentesCarteira: (competencia?: string) => { totalCriadas: number; detalhes: string[] };
   gerarTarefasAteJaneiro2027: () => { totalCriadas: number; detalhes: string[] };
   gerarTarefasEmpresaAteJaneiro2027: (clienteId: string) => { totalCriadas: number; detalhes: string[] };
+  restaurarTarefasPadraoCarteira: () => { totalRestauradas: number };
   adicionarDocumentoLegalCliente: (clienteId: string, doc: Omit<DocumentoLegalCliente, 'id' | 'data_upload'>) => void;
   removerDocumentoLegalCliente: (clienteId: string, docId: string) => void;
   atualizarAcessoPortalCliente: (clienteId: string, credenciais: CredenciaisPortalCliente) => void;
@@ -658,8 +660,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
   const [colaboradores, setColaboradores] = useState<Colaborador[]>(initialColaboradores);
   const [tarefas, setTarefas] = useState<Tarefa[]>(() => {
-    const ehCompReset = (comp: string) => comp === '11/2026' || comp === '12/2026' || comp === '01/2027';
-    const base = initialTarefas.filter(t => !ehCompReset(t.competencia) || ehRegistroSamira(t));
+    const base = [...initialTarefas];
     if (!base.some(ehRegistroSamira)) {
       base.push(tarefaRegistroSamiraPadrao);
     }
@@ -783,7 +784,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('gestup_declaracoes');
 
       const savedTarefas = localStorage.getItem('gestup_v2_tarefas');
-      let baseTarefas: Tarefa[] = initialTarefas;
+      let baseTarefas: Tarefa[] = [];
       if (savedTarefas) {
         try {
           const parsed = JSON.parse(savedTarefas);
@@ -792,16 +793,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
       }
-      // Zerar tarefas das competências a partir do mês 11/2026 até Janeiro/2027,
-      // preservando exclusivamente a obrigação mandatória "Registro - Samira"
-      const ehCompReset = (comp: string) => comp === '11/2026' || comp === '12/2026' || comp === '01/2027';
-      const tarefasSanitizadas = baseTarefas.filter(t => !ehCompReset(t.competencia) || ehRegistroSamira(t));
-      if (!tarefasSanitizadas.some(ehRegistroSamira)) {
-        tarefasSanitizadas.push(tarefaRegistroSamiraPadrao);
-      }
-      let tarefasFinais = tarefasSanitizadas.map(enrichTarefa);
 
-      // Padronização mandatória solicitada: Fiscal -> Guilherme | Pessoal / RH -> Ygor
+      // Se não havia tarefas no localStorage, inicializa com initialTarefas
+      if (baseTarefas.length === 0) {
+        baseTarefas = [...initialTarefas];
+      } else {
+        // Recuperação Segura Pós-Bug: se o mês 11/2026 foi esvaziado por reloads anteriores
+        // (ficando com 0 tarefas ou apenas com "Registro - Samira"), restaura as tarefas
+        // das competências 11/2026, 12/2026 e 01/2027 a partir de rawInitialTarefas sem perder as já existentes
+        const tarefas11 = baseTarefas.filter(t => t.competencia === '11/2026');
+        if (tarefas11.length <= 1) {
+          const recuperaveis = rawInitialTarefas.filter(
+            t => t.competencia === '11/2026' || t.competencia === '12/2026' || t.competencia === '01/2027'
+          );
+          recuperaveis.forEach(tOrig => {
+            const jaExiste = baseTarefas.some(
+              b => b.id === tOrig.id || (b.titulo === tOrig.titulo && b.cliente_id === tOrig.cliente_id && b.competencia === tOrig.competencia)
+            );
+            if (!jaExiste) {
+              baseTarefas.push(tOrig);
+            }
+          });
+        }
+      }
+
+      // Garante que "Registro - Samira" está sempre presente e protegida
+      if (!baseTarefas.some(ehRegistroSamira)) {
+        baseTarefas.push(tarefaRegistroSamiraPadrao);
+      }
+
+      let tarefasFinais = baseTarefas.map(enrichTarefa);
+
+      // Padronização mandatória solicitada: Fiscal -> Guilherme | Pessoal / RH / Contábil -> Ygor
       tarefasFinais = tarefasFinais.map(t => {
         const cat = (t.categoria || '').toLowerCase();
         const tit = (t.titulo || '').toLowerCase();
@@ -1259,19 +1282,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addTarefa = (tarefa: Omit<Tarefa, 'id' | 'created_at'>) => {
     const nova: Tarefa = {
       ...tarefa,
-      id: `tar-${Date.now()}`,
+      id: `tar-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       created_at: new Date().toISOString().split('T')[0]
     };
-    saveTarefas([nova, ...tarefas]);
+    const tarefaEnriquecida = enrichTarefa(nova);
+    setTarefas(prev => {
+      const updated = [tarefaEnriquecida, ...prev];
+      try { localStorage.setItem('gestup_v2_tarefas', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   const updateTarefa = (id: string, updates: Partial<Tarefa>) => {
-    const updated = tarefas.map(t => t.id === id ? { ...t, ...updates } : t);
-    saveTarefas(updated);
+    setTarefas(prev => {
+      const updated = prev.map(t => t.id === id ? { ...t, ...updates } : t);
+      try { localStorage.setItem('gestup_v2_tarefas', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   const deleteTarefa = (id: string) => {
-    saveTarefas(tarefas.filter(t => t.id !== id));
+    setTarefas(prev => {
+      const updated = prev.filter(t => t.id !== id);
+      try { localStorage.setItem('gestup_v2_tarefas', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
   };
 
   const moverTarefaStatus = (tarefaId: string, novoStatus: StatusTarefa) => {
@@ -2572,6 +2607,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     return { totalCriadas: criadas, detalhes };
+  };
+
+  const restaurarTarefasPadraoCarteira = (): { totalRestauradas: number } => {
+    let inseridas = 0;
+    setTarefas(prev => {
+      const novaLista = [...prev];
+      rawInitialTarefas.forEach(tOrig => {
+        const jaExiste = novaLista.some(
+          t => t.id === tOrig.id || (t.titulo === tOrig.titulo && t.cliente_id === tOrig.cliente_id && t.competencia === tOrig.competencia)
+        );
+        if (!jaExiste) {
+          novaLista.push(enrichTarefa(tOrig));
+          inseridas++;
+        }
+      });
+      if (!novaLista.some(ehRegistroSamira)) {
+        novaLista.push(tarefaRegistroSamiraPadrao);
+        inseridas++;
+      }
+      try {
+        localStorage.setItem('gestup_v2_tarefas', JSON.stringify(novaLista));
+      } catch {}
+      return novaLista;
+    });
+    return { totalRestauradas: inseridas };
   };
 
   const adicionarDocumentoLegalCliente = (clienteId: string, doc: Omit<DocumentoLegalCliente, 'id' | 'data_upload'>) => {
@@ -3878,6 +3938,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         gerarTarefasRecorrentesCarteira,
         gerarTarefasAteJaneiro2027,
         gerarTarefasEmpresaAteJaneiro2027,
+        restaurarTarefasPadraoCarteira,
         adicionarDocumentoLegalCliente,
         removerDocumentoLegalCliente,
         atualizarAcessoPortalCliente,

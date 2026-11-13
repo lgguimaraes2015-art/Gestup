@@ -462,7 +462,7 @@ export const tarefaRegistroSamiraPadrao: Tarefa = {
   created_at: "2026-11-01"
 };
 
-const rawInitialTarefas: Tarefa[] = [
+export const rawInitialTarefas: Tarefa[] = [
   {
     "id": "6aa35d009f28f65c1df34e94",
     "titulo": "NOTA FISCAL DE SERVIÇO - RECOVERY",
@@ -3705,13 +3705,9 @@ const rawInitialTarefas: Tarefa[] = [
   }
 ];
 
-// As competências a partir do mês 11/2026 até 01/2027 têm todas as tarefas zeradas
-// para serem recriadas por empresa e lançadas até Janeiro/2027,
-// com a exceção estrita e mandatória de "Registro - Samira", que deve ser preservada.
-const ehCompetenciaAlvoReset = (comp: string) => comp === '11/2026' || comp === '12/2026' || comp === '01/2027';
-
+// Base consolidada de tarefas para todas as competências
 export const initialTarefas: Tarefa[] = [
-  ...rawInitialTarefas.filter(t => !ehCompetenciaAlvoReset(t.competencia) || ehRegistroSamira(t)),
+  ...rawInitialTarefas,
   tarefaRegistroSamiraPadrao
 ];
 

@@ -51,7 +51,8 @@ import {
   Settings2,
   Download,
   Plus,
-  Users
+  Users,
+  RotateCcw
 } from 'lucide-react';
 
 interface TarefasViewProps {
@@ -90,6 +91,8 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     removerArquivoTarefa,
     gerarTarefasRecorrentesCarteira,
     gerarTarefasAteJaneiro2027,
+    restaurarTarefasPadraoCarteira,
+    setActiveTab,
     modelosMensagens
   } = useApp();
 
@@ -920,6 +923,22 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
             <Users className="w-3.5 h-3.5 text-brand-blue" />
             <span>Padronizar Responsáveis</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm('Deseja restaurar as tarefas padrão da carteira que possam estar faltando? Suas alterações existentes serão preservadas.')) {
+                const res = restaurarTarefasPadraoCarteira();
+                setFeedbackToast(`🔄 Restauração concluída com sucesso! ${res.totalRestauradas} tarefa(s) adicionada(s) ou atualizada(s).`);
+                setTimeout(() => setFeedbackToast(null), 4000);
+              }
+            }}
+            title="Restaura tarefas padrão e garante que nenhuma tarefa seja perdida"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all shadow-sm"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+            <span>Restaurar Base</span>
+          </button>
         </div>
       </div>
 
@@ -1332,10 +1351,11 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
                             {/* Excluir */}
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 if (window.confirm(`Deseja excluir a tarefa "${tarefa.titulo}" da competência ${tarefa.competencia}?`)) {
                                   deleteTarefa(tarefa.id);
-                                  setFeedbackToast(`🗑️ Tarefa "${tarefa.titulo}" excluída.`);
+                                  setFeedbackToast(`🗑️ Tarefa "${tarefa.titulo}" excluída com sucesso.`);
                                   setTimeout(() => setFeedbackToast(null), 3000);
                                 }
                               }}
@@ -1552,10 +1572,11 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
                               {/* Excluir Tarefa no Kanban */}
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   if (window.confirm(`Deseja excluir a tarefa "${tarefa.titulo}" da competência ${tarefa.competencia}?`)) {
                                     deleteTarefa(tarefa.id);
-                                    setFeedbackToast(`🗑️ Tarefa "${tarefa.titulo}" excluída.`);
+                                    setFeedbackToast(`🗑️ Tarefa "${tarefa.titulo}" excluída com sucesso.`);
                                     setTimeout(() => setFeedbackToast(null), 3000);
                                   }
                                 }}
@@ -1997,6 +2018,18 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                       )}
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalWhatsAppFallback(null);
+                      setActiveTab('whatsapp');
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all"
+                  >
+                    <Settings2 className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Ver Central do WhatsApp / Diagnóstico do Robô</span>
+                  </button>
 
                   <button
                     type="button"

@@ -149,7 +149,7 @@ export function WhatsAppCentralView() {
   };
 
   const handleConfigurarDockerLocal = () => {
-    const urlLocal = 'http://localhost:8080';
+    const urlLocal = 'http://localhost:8084';
     setApiUrl(urlLocal);
     atualizarWhatsAppConfig({
       api_url: urlLocal,
@@ -228,7 +228,7 @@ export function WhatsAppCentralView() {
     setTimeout(() => setFeedbackEnvio(false), 3000);
   };
 
-  const comandoDocker = `docker run -d --name evolution-api -p 8080:8080 -e SERVER_PORT=8080 -e SERVER_URL=http://localhost:8080 -e AUTHENTICATION_API_KEY=${apiKey} -v evolution_instances:/evolution evoapicloud/evolution-api:latest`;
+  const comandoDocker = `docker run -d --name evolution-api -p 8084:8080 -e SERVER_PORT=8080 -e SERVER_URL=http://localhost:8084 -e AUTHENTICATION_API_KEY=${apiKey} -v evolution_instances:/evolution evoapicloud/evolution-api:latest`;
 
   return (
     <div className="space-y-6">
@@ -364,7 +364,7 @@ export function WhatsAppCentralView() {
                   onClick={handleConfigurarDockerLocal}
                   className="mt-2.5 w-full py-1.5 px-3 rounded-lg bg-brand-green hover:bg-brand-green-hover text-white text-[11px] font-bold transition-all shadow-2xs"
                 >
-                  Usar http://localhost:8080 no GestUp
+                  Usar http://localhost:8084 no GestUp
                 </button>
               </div>
 
@@ -960,7 +960,7 @@ export function WhatsAppCentralView() {
                 onClick={handleConfigurarDockerLocal}
                 className="text-xs font-semibold text-brand-green hover:underline"
               >
-                Preencher com Docker Local (localhost:8080)
+                Preencher com Docker Local (localhost:8084)
               </button>
 
               <button

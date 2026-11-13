@@ -410,7 +410,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
       cobrar_whatsapp: st.cobrar_whatsapp,
       configuracao_cobranca: st.cobrar_whatsapp ? {
         habilitado: true,
-        telefones: [cliente.whatsapp || cliente.telefone || '19999990000'],
+        telefones: [cliente.whatsapp || cliente.telefone || ''].filter(Boolean),
         mensagem_padrao: `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para finalizarmos no prazo.`,
         frequencia: st.frequencia,
         horario_envio: '08:00',
@@ -452,7 +452,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     const tarefaLive = tarefas.find(t => t.id === processoModalTarefa.id) || processoModalTarefa;
     const cliente = clientes.find(c => c.id === tarefaLive.cliente_id);
     const ordemNova = (tarefaLive.etapas_processo?.length || 0) + 1;
-    const telefonesPadrao = [cliente?.whatsapp || cliente?.telefone || '19999990000'];
+    const telefonesPadrao = [cliente?.whatsapp || cliente?.telefone || ''].filter(Boolean);
 
     adicionarEtapaProcesso(tarefaLive.id, {
       titulo: novaEtapaTitulo,
@@ -480,18 +480,28 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
   const handleAbrirConfiguracaoCobranca = (tarefaId: string, etapa: EtapaProcessoTarefa, clienteNome: string) => {
     const tarefa = tarefas.find(t => t.id === tarefaId);
-    const cliente = clientes.find(c => c.id === tarefa?.cliente_id);
-    const telefonesIniciais = etapa.configuracao_cobranca?.telefones && etapa.configuracao_cobranca.telefones.length > 0
-      ? [etapa.configuracao_cobranca.telefones[0] || '', etapa.configuracao_cobranca.telefones[1] || '']
-      : [cliente?.whatsapp || cliente?.telefone || '19999990000', ''];
+    const cliente = clientes.find(c => c.id === tarefa?.cliente_id || c.nome === clienteNome);
+    const telOficial = (cliente?.whatsapp || cliente?.telefone || '').trim();
+
+    const telExistente1 = (etapa.configuracao_cobranca?.telefones?.[0] || '').trim();
+    const telExistente2 = (etapa.configuracao_cobranca?.telefones?.[1] || '').trim();
+
+    // Se o telefone configurado for um placeholder antigo ('19992803902', '19999990000'), substitui pelo oficial
+    const tel1 = (telExistente1 && !['19992803902', '19999990000'].includes(telExistente1.replace(/\D/g, '')))
+      ? telExistente1
+      : telOficial;
+
+    const tel2 = (telExistente2 && !['19992803902', '19999990000', '19992080639'].includes(telExistente2.replace(/\D/g, '')))
+      ? telExistente2
+      : '';
 
     setCobrancaSuspensa({
       tarefaId,
       etapaId: etapa.id,
       etapaTitulo: etapa.titulo,
-      clienteNome,
+      clienteNome: cliente?.nome || clienteNome,
       dataLimite: etapa.data_limite,
-      telefones: telefonesIniciais,
+      telefones: [tel1, tel2],
       mensagem: etapa.configuracao_cobranca?.mensagem_padrao || `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à empresa *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para darmos continuidade ao processo.`,
       frequencia: etapa.configuracao_cobranca?.frequencia || 'Diariamente'
     });
@@ -723,8 +733,8 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
         setFeedbackToast(`🎉 Tarefa concluída! Guia enviada via robô do WhatsApp para ${nomeCli}.`);
         setTimeout(() => setFeedbackToast(null), 5000);
       } else {
-        // Se a Evolution API falhou (ex: Railway 404) ou se o robô está offline, abre modal de envio direto
-        const telDest = resultado.telefoneDestinatario || cliente?.whatsapp || cliente?.telefone || '';
+        // Prioriza SEMPRE o WhatsApp principal cadastrado no perfil da empresa
+        const telDest = cliente?.whatsapp || cliente?.telefone || resultado.telefoneDestinatario || '';
         setFallbackTelefoneInput(telDest);
         setModalWhatsAppFallback({
           clienteNome: nomeCli,
@@ -1601,6 +1611,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
       {/* 5. MODAL INTELIGENTE DE CONCLUSÃO COM GUIA DE PAGAMENTO */}
       {concluirModalTarefa && (() => {
         const modeloCorrespondente = obterModeloMensagemParaTarefa(concluirModalTarefa);
+        const cliModal = clientes.find(c => c.id === concluirModalTarefa.cliente_id);
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
@@ -1838,7 +1849,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                       <div className="flex items-center gap-2">
                         <MessageSquare className="w-3.5 h-3.5 text-brand-green shrink-0" />
                         <span>
-                          <strong>WhatsApp Automático:</strong> Notificação instantânea com vencimento e link direto no Portal para o cliente abrir e baixar.
+                          <strong>WhatsApp Automático:</strong> Notificação oficial enviada para: <strong className="text-emerald-800">{cliModal?.whatsapp || cliModal?.telefone || 'Sem WhatsApp'}</strong> (com link no Portal).
                         </span>
                       </div>
                     </div>
@@ -3513,10 +3524,10 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
                   <button
                     type="button"
                     onClick={() => {
-                      const cli = clientes.find(c => c.nome === cobrancaSuspensa.clienteNome);
+                      const cli = clientes.find(c => c.nome === cobrancaSuspensa.clienteNome || c.id === tarefas.find(t => t.id === cobrancaSuspensa.tarefaId)?.cliente_id);
                       if (cli) {
-                        const tel1 = cli.whatsapp || cli.telefone || '19999990000';
-                        const tel2 = (cli.contatos_notificacao && cli.contatos_notificacao[1]?.telefoneOuGrupo) || '';
+                        const tel1 = cli.whatsapp || cli.telefone || '';
+                        const tel2 = (cli.contatos_notificacao && cli.contatos_notificacao[1]?.telefoneOuGrupo && !cli.contatos_notificacao[1]?.telefoneOuGrupo.includes('@g.us')) ? cli.contatos_notificacao[1].telefoneOuGrupo : '';
                         setCobrancaSuspensa(prev => prev ? { ...prev, telefones: [tel1, tel2] } : null);
                       }
                     }}

@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: evolution_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution_password
+      POSTGRES_DB: evolution_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    container_name: evolution-api
+    restart: always
+    ports:
+      - "8084:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SERVER_URL=http://localhost:8084
+      - AUTHENTICATION_API_KEY=68A885CD-5F29-4269-949C-8AEB4D149393
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution_password@postgres:5432/evolution_db?schema=public
+      - DATABASE_CLIENT_NAME=evolution_db
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_MESSAGE_UPDATE=true
+      - DATABASE_SAVE_DATA_CONTACTS=true
+      - DATABASE_SAVE_DATA_CHATS=true
+      - CACHE_REDIS_ENABLED=false
+      - CACHE_LOCAL_ENABLED=true
+      - CACHE_LOCAL_TTL=86400
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - evo_instances:/evolution/instances
+
+volumes:
+  pgdata:
+  evo_instances:

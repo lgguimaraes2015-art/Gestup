@@ -512,21 +512,21 @@ const enrichCliente = (c: Cliente): Cliente => ({
     ] : [])
   ],
   tarefas_empresa: Array.isArray(c.tarefas_empresa) ? c.tarefas_empresa : [],
-  contatos_notificacao: (c.contatos_notificacao && c.contatos_notificacao.length > 0) ? c.contatos_notificacao : [
+  contatos_notificacao: [
     {
       id: `ct-princ-${c.id}`,
       nome: c.responsavel || c.nome.split(' ')[0] || 'Responsável',
-      telefoneOuGrupo: c.whatsapp || c.telefone || '19999990000',
+      telefoneOuGrupo: (c.whatsapp || c.telefone || '').trim(),
       tipo: 'Individual',
       principal: true
     },
-    {
-      id: `ct-grp-${c.id}`,
-      nome: `Grupo Fiscal / Financeiro ${c.nome.split(' ')[0]}`,
-      telefoneOuGrupo: `1203630${c.id.slice(0, 8)}@g.us`,
-      tipo: 'Grupo',
-      principal: false
-    }
+    ...((c.contatos_notificacao || []).filter(ct => 
+      !ct.id?.startsWith('ct-princ') && 
+      !ct.telefoneOuGrupo?.includes('@g.us') && 
+      !ct.telefoneOuGrupo?.includes('19999990000') &&
+      !ct.telefoneOuGrupo?.includes('19992803902') &&
+      (ct.telefoneOuGrupo || '').trim().length > 0
+    ))
   ],
   declaracoes_vinculadas: (c.declaracoes_vinculadas && c.declaracoes_vinculadas.length > 0) ? c.declaracoes_vinculadas : [
     {
@@ -601,7 +601,7 @@ const enrichTarefa = (t: Tarefa): Tarefa => {
           cobrar_whatsapp: true,
           configuracao_cobranca: {
             habilitado: true,
-            telefones: ['19992803902', '19992080639'],
+            telefones: [],
             mensagem_padrao: 'Olá {cliente}! Lembramos que a etapa *{etapa}* referente à empresa *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar a validação para darmos continuidade ao processo.',
             frequencia: 'Diariamente',
             horario_envio: '08:00',
@@ -621,7 +621,7 @@ const enrichTarefa = (t: Tarefa): Tarefa => {
           cobrar_whatsapp: true,
           configuracao_cobranca: {
             habilitado: true,
-            telefones: ['19992803902'],
+            telefones: [],
             mensagem_padrao: 'Prezado(a) {cliente}, informamos que a etapa *{etapa}* está agendada para finalização até *{data_limite}*. Qualquer dúvida contate a equipe fin.up.',
             frequencia: 'Semanalmente (Segundas-feiras)',
             horario_envio: '08:00',
@@ -1465,10 +1465,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let msgFinalWhats = '';
     let telFinalWhats = '';
     const nomeClienteAlvo = cliente?.nome || tarefa.cliente_nome;
+    const clienteWhats = (cliente?.whatsapp || cliente?.telefone || '').trim();
 
     if (dadosGuia?.ehPagamento && dadosGuia.arquivoNome && dadosGuia.dataVencimento) {
       const enviarWhats = cliente?.receber_guias_whatsapp !== false;
-      const clienteWhats = cliente?.whatsapp || cliente?.telefone || '';
       const clienteEmail = cliente?.email || '';
 
       const baseUrl = getDominioPublicoSeguro();
@@ -1508,11 +1508,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         data_envio: new Date().toISOString()
       };
 
-      // Dispara WhatsApp para o contato principal e contatos extras/grupos cadastrados
+      // Dispara WhatsApp priorizando SEMPRE o número oficial de WhatsApp do cadastro da empresa
       if (enviarWhats) {
-        const contatosAlvo = cliente?.contatos_notificacao?.length
-          ? cliente.contatos_notificacao
-          : [{ id: 'padrao', nome: nomeClienteAlvo, telefoneOuGrupo: clienteWhats, tipo: 'Individual' as const, principal: true }];
+        // O destinatário de referência para exibição e WhatsApp Web é SEMPRE o WhatsApp oficial da empresa
+        telFinalWhats = clienteWhats;
+
+        const contatosAlvo: Array<{ id: string; nome: string; telefoneOuGrupo: string }> = [];
+        if (clienteWhats) {
+          contatosAlvo.push({
+            id: `ct-princ-${tarefa.cliente_id}`,
+            nome: cliente?.responsavel || nomeClienteAlvo,
+            telefoneOuGrupo: clienteWhats
+          });
+        }
+
+        // Adiciona contatos adicionais válidos (se houver, e não sendo fake placeholders ou grupos simulados)
+        if (cliente?.contatos_notificacao) {
+          for (const ct of cliente.contatos_notificacao) {
+            const cleanCt = (ct.telefoneOuGrupo || '').trim();
+            if (
+              cleanCt &&
+              cleanCt !== clienteWhats &&
+              !cleanCt.includes('@g.us') &&
+              !cleanCt.includes('19999990000') &&
+              !cleanCt.includes('19992803902')
+            ) {
+              contatosAlvo.push({
+                id: ct.id,
+                nome: ct.nome || nomeClienteAlvo,
+                telefoneOuGrupo: cleanCt
+              });
+            }
+          }
+        }
+
+        // Fallback de segurança se contatosAlvo estiver vazio
+        if (contatosAlvo.length === 0 && clienteWhats) {
+          contatosAlvo.push({
+            id: 'padrao',
+            nome: nomeClienteAlvo,
+            telefoneOuGrupo: clienteWhats
+          });
+        }
 
         for (const ct of contatosAlvo) {
           const msgTexto = dadosGuia.mensagemPersonalizada
@@ -1528,16 +1565,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               );
 
           msgFinalWhats = msgTexto;
-          telFinalWhats = ct.telefoneOuGrupo;
-
-          let cleanTel = (ct.telefoneOuGrupo || '').replace(/\D/g, '');
-          if (cleanTel.length === 10 || cleanTel.length === 11) {
-            cleanTel = `55${cleanTel}`;
-          }
-
-          if (cleanTel.length >= 10) {
-            fallbackWhatsAppWebUrl = `https://api.whatsapp.com/send?phone=${cleanTel}&text=${encodeURIComponent(msgTexto)}`;
-          }
 
           const resultadoOk = await enviarMensagemWhatsApp(
             'Cliente',
@@ -1555,6 +1582,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (resultadoOk) {
             houveEnvioSucesso = true;
           }
+        }
+
+        // Gera a URL do WhatsApp Web usando rigorosamente o WhatsApp oficial cadastrado da empresa
+        let cleanTel = (clienteWhats || telFinalWhats).replace(/\D/g, '');
+        if (cleanTel.length === 10 || cleanTel.length === 11) {
+          cleanTel = `55${cleanTel}`;
+        }
+
+        if (cleanTel.length >= 10) {
+          fallbackWhatsAppWebUrl = `https://api.whatsapp.com/send?phone=${cleanTel}&text=${encodeURIComponent(msgFinalWhats)}`;
         }
       }
     }
@@ -1584,7 +1621,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ehPagamento: Boolean(dadosGuia?.ehPagamento),
       whatsAppEnviado: houveEnvioSucesso,
       clienteNome: nomeClienteAlvo,
-      telefoneDestinatario: telFinalWhats,
+      telefoneDestinatario: clienteWhats || telFinalWhats,
       mensagemTexto: msgFinalWhats,
       linkPortalGuia: guiaInfo?.arquivo_url,
       fallbackWhatsAppWebUrl,
@@ -1642,6 +1679,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toggleProcessoTarefa = (tarefaId: string, ehProcesso: boolean) => {
     const tarefa = tarefas.find(t => t.id === tarefaId);
     if (!tarefa) return;
+    const cliAlvo = clientes.find(c => c.id === tarefa.cliente_id);
+    const telOficialCli = (cliAlvo?.whatsapp || cliAlvo?.telefone || '').trim();
     let etapas = tarefa.etapas_processo || [];
     if (ehProcesso && etapas.length === 0) {
       etapas = [
@@ -1656,7 +1695,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           cobrar_whatsapp: true,
           configuracao_cobranca: {
             habilitado: true,
-            telefones: ['19992803902'],
+            telefones: telOficialCli ? [telOficialCli] : [],
             mensagem_padrao: `Olá {cliente}! Lembramos que a etapa *{etapa}* referente à *{empresa}* tem data limite até *{data_limite}*. Favor nos enviar para finalizarmos no prazo.`,
             frequencia: 'Diariamente',
             horario_envio: '08:00'

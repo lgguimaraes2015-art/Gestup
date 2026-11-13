@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
       media, // Data URL ou URL pública do documento (ex: data:application/pdf;base64,...)
       fileName,
       mimeType = 'application/pdf',
-      apiUrl = 'https://evolution-api-production-ed7c.up.railway.app',
+      apiUrl = 'http://localhost:8084',
       apiKey = '68A885CD-5F29-4269-949C-8AEB4D149393',
       instanceName = 'gestup'
     } = body;

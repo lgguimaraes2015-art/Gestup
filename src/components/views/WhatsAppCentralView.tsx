@@ -48,10 +48,11 @@ export function WhatsAppCentralView() {
     mensagem: string;
     connected?: boolean;
     instance?: string;
+    qrcodeBase64?: string | null;
   } | null>(null);
 
   // Estados de Configuração da API
-  const [apiUrl, setApiUrl] = useState(whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app');
+  const [apiUrl, setApiUrl] = useState(whatsAppConfig.api_url || 'http://localhost:8084');
   const [apiKey, setApiKey] = useState(whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393');
   const [nomeInstancia, setNomeInstancia] = useState(whatsAppConfig.nome_instancia || 'gestup');
   const [feedbackSalvo, setFeedbackSalvo] = useState(false);
@@ -103,13 +104,18 @@ export function WhatsAppCentralView() {
       } else {
         const msgErro = data?.error || 'Não foi possível comunicar com o servidor da Evolution API.';
         const eh404Railway = msgErro.includes('404') || msgErro.includes('Railway') || msgErro.includes('Application not found');
+        const aguardandoQr = data?.qrcodeBase64 || data?.state === 'connecting';
+
         setStatusDiagnostico({
           ok: false,
-          statusHttp: data?.statusHttp || 404,
-          mensagem: eh404Railway
-            ? 'Servidor Evolution API no Railway Offline (HTTP 404 - Application not found). O plano gratuito de teste de 30 dias do Railway expirou.'
-            : msgErro,
-          connected: false
+          statusHttp: data?.statusHttp || (aguardandoQr ? 200 : 404),
+          mensagem: aguardandoQr
+            ? 'Servidor Evolution API Local online! Escaneie o QR Code abaixo com o WhatsApp do celular para conectar.'
+            : (eh404Railway
+                ? 'Servidor Evolution API no Railway Offline (HTTP 404 - Application not found). O plano gratuito de teste de 30 dias do Railway expirou.'
+                : msgErro),
+          connected: false,
+          qrcodeBase64: data?.qrcodeBase64 || null
         });
         atualizarWhatsAppConfig({
           conectado: false,
@@ -191,7 +197,13 @@ export function WhatsAppCentralView() {
     setEnviandoChat(true);
     setFeedbackEnvioChat(null);
 
-    const fone = clienteAtivo.whatsapp || clienteAtivo.telefone || '5519992080639';
+    const fone = (clienteAtivo.whatsapp || clienteAtivo.telefone || '').trim();
+    if (!fone) {
+      setFeedbackEnvioChat('⚠️ Esta empresa não possui telefone de WhatsApp cadastrado no perfil.');
+      setEnviandoChat(false);
+      return;
+    }
+
     const sucesso = await enviarMensagemWhatsApp(
       'Cliente',
       clienteAtivo.nome,
@@ -213,8 +225,19 @@ export function WhatsAppCentralView() {
 
   const handleEnviarSimulacao = (e: React.FormEvent) => {
     e.preventDefault();
+    const cliObj = clientes.find(c => c.nome === selectedCliente);
+    const colabObj = colaboradores.find(c => c.nome === selectedColab);
+    const foneOficial = destinatarioTipo === 'Colaborador'
+      ? (colabObj?.whatsapp || colabObj?.telefone || '')
+      : (cliObj?.whatsapp || cliObj?.telefone || '');
+    const fone = (telefoneManual || foneOficial).trim();
+
+    if (!fone) {
+      alert('Informe ou configure um telefone de WhatsApp válido no cadastro antes de enviar.');
+      return;
+    }
+
     const nome = destinatarioTipo === 'Colaborador' ? selectedColab : selectedCliente;
-    const fone = telefoneManual || (destinatarioTipo === 'Colaborador' ? '5519992080639' : '5519994910591');
 
     enviarMensagemWhatsApp(
       destinatarioTipo,
@@ -397,6 +420,46 @@ export function WhatsAppCentralView() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CARD COM O QR CODE ATIVO DO WHATSAPP LOCAL */}
+      {statusDiagnostico?.qrcodeBase64 && !statusDiagnostico.connected && (
+        <div className="bg-white border-2 border-brand-green/40 rounded-3xl p-6 shadow-md flex flex-col md:flex-row items-center gap-6 animate-in fade-in">
+          <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm shrink-0">
+            <img
+              src={statusDiagnostico.qrcodeBase64}
+              alt="QR Code WhatsApp"
+              className="w-52 h-52 object-contain rounded-xl"
+            />
+          </div>
+          <div className="space-y-3 flex-1 text-center md:text-left">
+            <div className="flex items-center justify-center md:justify-start gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-brand-green animate-ping" />
+              <span className="text-xs font-black uppercase tracking-wider text-brand-green">
+                Aguardando Leitura do QR Code
+              </span>
+            </div>
+            <h3 className="text-base font-black text-slate-900">
+              Conecte o WhatsApp da sua empresa ao GestUp
+            </h3>
+            <ol className="text-xs text-slate-600 space-y-1.5 list-decimal list-inside leading-relaxed">
+              <li>Abra o <strong>WhatsApp</strong> no celular da empresa.</li>
+              <li>Toque no <strong>Menu (3 pontinhos ou Configurações)</strong>.</li>
+              <li>Selecione <strong>Aparelhos Conectados &gt; Conectar um Aparelho</strong>.</li>
+              <li>Aponte a câmera para o QR Code ao lado.</li>
+            </ol>
+            <div className="pt-2 flex items-center justify-center md:justify-start gap-3">
+              <button
+                onClick={testarConexaoReal}
+                disabled={testandoStatus}
+                className="px-4 py-2.5 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${testandoStatus ? 'animate-spin' : ''}`} />
+                <span>{testandoStatus ? 'Verificando...' : 'Já escaneei (Verificar Conexão)'}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -690,7 +753,17 @@ export function WhatsAppCentralView() {
                   <label className="block font-semibold text-slate-700 mb-1">Destinatário</label>
                   <select
                     value={destinatarioTipo}
-                    onChange={e => setDestinatarioTipo(e.target.value as 'Colaborador' | 'Cliente')}
+                    onChange={e => {
+                      const tipo = e.target.value as 'Colaborador' | 'Cliente';
+                      setDestinatarioTipo(tipo);
+                      if (tipo === 'Cliente') {
+                        const c = clientes.find(cli => cli.nome === selectedCliente);
+                        setTelefoneManual(c?.whatsapp || c?.telefone || '');
+                      } else {
+                        const col = colaboradores.find(co => co.nome === selectedColab);
+                        setTelefoneManual(col?.whatsapp || col?.telefone || '');
+                      }
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
                   >
                     <option value="Colaborador">Colaborador (Equipe)</option>
@@ -703,7 +776,12 @@ export function WhatsAppCentralView() {
                   {destinatarioTipo === 'Colaborador' ? (
                     <select
                       value={selectedColab}
-                      onChange={e => setSelectedColab(e.target.value)}
+                      onChange={e => {
+                        const nomeNovo = e.target.value;
+                        setSelectedColab(nomeNovo);
+                        const col = colaboradores.find(co => co.nome === nomeNovo);
+                        setTelefoneManual(col?.whatsapp || col?.telefone || '');
+                      }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
                     >
                       {colaboradores.map(c => (
@@ -713,7 +791,14 @@ export function WhatsAppCentralView() {
                   ) : (
                     <select
                       value={selectedCliente}
-                      onChange={e => setSelectedCliente(e.target.value)}
+                      onChange={e => {
+                        const nomeNovo = e.target.value;
+                        setSelectedCliente(nomeNovo);
+                        const c = clientes.find(cli => cli.nome === nomeNovo);
+                        if (c) {
+                          setTelefoneManual(c.whatsapp || c.telefone || '');
+                        }
+                      }}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
                     >
                       {clientes.map(c => (

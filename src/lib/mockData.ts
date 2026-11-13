@@ -4310,7 +4310,7 @@ export const initialWhatsAppConfig: WhatsAppConfig = {
   lembrete_dias_antes: 1,
   cobranca_atraso_ativa: true,
   cobranca_documentos_ativa: true,
-  api_url: 'https://evolution-api-production-ed7c.up.railway.app',
+  api_url: 'http://localhost:8084',
   api_key: '68A885CD-5F29-4269-949C-8AEB4D149393',
   instancia_id: '737a71b4-7795-45ad-99e5-7105c9ad3ecf',
   ultima_sincronizacao: 'Hoje às 08:00',

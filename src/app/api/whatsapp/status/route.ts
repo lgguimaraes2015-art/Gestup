@@ -90,13 +90,30 @@ async function checkStatus(apiUrl: string, apiKey: string, instanceName: string)
 
   const state = data?.instance?.state || 'unknown';
 
+  let qrcodeBase64 = null;
+  if (state !== 'open') {
+    try {
+      const qrRes = await fetch(`${baseUrl}/instance/connect/${encodeURIComponent(cleanInstance)}`, {
+        method: 'GET',
+        headers: { 'apikey': cleanKey }
+      });
+      if (qrRes.ok) {
+        const qrData = await qrRes.json();
+        qrcodeBase64 = qrData.base64 || qrData.qrcode?.base64 || null;
+      }
+    } catch (qrErr) {
+      console.warn('[WhatsApp Status] Falha ao obter QR code da instância:', qrErr);
+    }
+  }
+
   return NextResponse.json({
     success: true,
     state,
     instanceName: cleanInstance,
     connected: state === 'open',
-    ownerFormatted: '+55 (19) 99208-0639',
+    ownerFormatted: state === 'open' ? '+55 (19) 99208-0639' : undefined,
     profileName: 'Finup Consultoria',
+    qrcodeBase64,
     data
   });
 }
@@ -104,7 +121,7 @@ async function checkStatus(apiUrl: string, apiKey: string, instanceName: string)
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const apiUrl = searchParams.get('apiUrl') || 'https://evolution-api-production-ed7c.up.railway.app';
+    const apiUrl = searchParams.get('apiUrl') || 'http://localhost:8084';
     const apiKey = searchParams.get('apiKey') || '68A885CD-5F29-4269-949C-8AEB4D149393';
     const instanceName = searchParams.get('instanceName') || 'gestup';
 
@@ -121,7 +138,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const {
-      apiUrl = 'https://evolution-api-production-ed7c.up.railway.app',
+      apiUrl = 'http://localhost:8084',
       apiKey = '68A885CD-5F29-4269-949C-8AEB4D149393',
       instanceName = 'gestup'
     } = body;

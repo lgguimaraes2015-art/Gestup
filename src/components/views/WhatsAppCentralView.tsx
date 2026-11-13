@@ -228,7 +228,7 @@ export function WhatsAppCentralView() {
     setTimeout(() => setFeedbackEnvio(false), 3000);
   };
 
-  const comandoDocker = `docker run -d --name evolution-api -p 8080:8080 -e AUTHENTICATION_API_KEY=${apiKey} atendai/evolution-api:v2.1.0`;
+  const comandoDocker = `docker run -d --name evolution-api -p 8080:8080 -e SERVER_PORT=8080 -e SERVER_URL=http://localhost:8080 -e AUTHENTICATION_API_KEY=${apiKey} -v evolution_instances:/evolution evoapicloud/evolution-api:latest`;
 
   return (
     <div className="space-y-6">

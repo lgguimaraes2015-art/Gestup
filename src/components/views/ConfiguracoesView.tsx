@@ -83,11 +83,12 @@ export function ConfiguracoesView() {
   const [testeMensagem, setTesteMensagem] = useState('Olá! Esta é uma notificação de teste enviada pela plataforma fin.up GestUp para validar a integração do WhatsApp.');
   const [numeroParaConectar, setNumeroParaConectar] = useState('+55 (19) 99208-0639');
   const [mostrarConfigAvancada, setMostrarConfigAvancada] = useState(false);
-  const [apiUrlInput, setApiUrlInput] = useState(whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app');
+  const [apiUrlInput, setApiUrlInput] = useState(whatsAppConfig.api_url || 'http://localhost:8084');
   const [apiKeyInput, setApiKeyInput] = useState(whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393');
   const [instanciaInput, setInstanciaInput] = useState(whatsAppConfig.nome_instancia || 'gestup');
   const [dominioPublicoInput, setDominioPublicoInput] = useState(whatsAppConfig.dominio_publico || '');
   const [salvandoCredenciais, setSalvandoCredenciais] = useState(false);
+  const [carregandoQr, setCarregandoQr] = useState(false);
   const [statusTesteConexao, setStatusTesteConexao] = useState<{ testado: boolean; ok: boolean; mensagem: string } | null>(null);
   const [testandoConexao, setTestandoConexao] = useState(false);
   const [linkSandboxWeb, setLinkSandboxWeb] = useState('');
@@ -588,12 +589,19 @@ export function ConfiguracoesView() {
           if (t.eh_processo && t.etapas_processo) {
             t.etapas_processo.forEach(e => {
               if (e.cobrar_whatsapp && !e.concluida) {
-                const cliente = clientes.find(c => c.id === t.cliente_id);
+                const cliente = clientes.find(c => c.id === t.cliente_id || c.nome === t.cliente_nome);
+                const telOficial = cliente?.whatsapp || cliente?.telefone || '';
                 const tels: string[] = [];
                 if (e.configuracao_cobranca?.telefones?.length) {
-                  tels.push(...e.configuracao_cobranca.telefones);
+                  const telsValidos = e.configuracao_cobranca.telefones
+                    .map(tel => tel.trim())
+                    .filter(tel => {
+                      const dig = tel.replace(/\D/g, '');
+                      return dig && dig !== '19992803902' && dig !== '19999990000' && !tel.includes('@g.us');
+                    });
+                  tels.push(...telsValidos);
                 }
-                if (tels.length === 0 && cliente?.whatsapp) tels.push(cliente.whatsapp);
+                if (tels.length === 0 && telOficial) tels.push(telOficial);
 
                 etapasFila08h.push({
                   tarefaId: t.id,
@@ -676,16 +684,23 @@ export function ConfiguracoesView() {
                     <>
                       <button
                         type="button"
-                        onClick={() => {
-                          setToastFeedback('📱 Gerando QR Code de conexão...');
-                          gerarQRCodeWhatsApp();
-                          setToastFeedback('📸 Aponte a câmera do WhatsApp para o QR Code abaixo para conectar.');
-                          setTimeout(() => setToastFeedback(null), 5000);
+                        disabled={carregandoQr}
+                        onClick={async () => {
+                          setCarregandoQr(true);
+                          setToastFeedback('📱 Buscando QR Code na Evolution API...');
+                          const qr = await gerarQRCodeWhatsApp();
+                          setCarregandoQr(false);
+                          if (qr) {
+                            setToastFeedback('📸 Aponte a câmera do WhatsApp para o QR Code abaixo para conectar.');
+                          } else {
+                            setToastFeedback('⚠️ Não foi possível obter o QR Code. Verifique se o Docker está rodando.');
+                          }
+                          setTimeout(() => setToastFeedback(null), 6000);
                         }}
-                        className="px-4 py-2 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition-all"
+                        className="px-4 py-2 rounded-xl bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                       >
-                        <QrCode className="w-4 h-4" />
-                        <span>Gerar QR Code de Conexão</span>
+                        <QrCode className={`w-4 h-4 ${carregandoQr ? 'animate-spin' : ''}`} />
+                        <span>{carregandoQr ? 'Gerando QR Code...' : 'Gerar QR Code de Conexão'}</span>
                       </button>
 
                       <button
@@ -706,18 +721,52 @@ export function ConfiguracoesView() {
 
               {/* QR Code Exibido se disponível */}
               {!whatsAppConfig.conectado && whatsAppConfig.qr_code && (
-                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col items-center justify-center space-y-3">
+                <div className="p-6 bg-slate-50 rounded-2xl border-2 border-dashed border-emerald-400 flex flex-col items-center justify-center space-y-4 animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-brand-green animate-ping" />
+                    <span className="text-xs font-black uppercase tracking-wider text-brand-green">
+                      Aguardando Leitura do QR Code
+                    </span>
+                  </div>
+
                   <div className="p-3 bg-white rounded-2xl shadow-md border border-slate-200">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={whatsAppConfig.qr_code}
                       alt="QR Code WhatsApp"
-                      className="w-48 h-48 object-contain"
+                      className="w-56 h-56 object-contain rounded-xl"
                     />
                   </div>
-                  <p className="text-xs text-slate-600 font-medium text-center">
-                    Abra o WhatsApp no celular {numeroParaConectar} &gt; <strong>Aparelhos conectados</strong> &gt; <strong>Conectar um aparelho</strong>
-                  </p>
+
+                  <div className="text-center space-y-1 max-w-sm">
+                    <p className="text-xs text-slate-800 font-bold">
+                      Aponte a câmera do seu WhatsApp:
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      WhatsApp &gt; Menu (3 pontinhos ou Configurações) &gt; <strong>Aparelhos conectados</strong> &gt; <strong>Conectar um aparelho</strong>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setToastFeedback('🔍 Verificando status na Evolution API...');
+                        const status = await verificarStatusWhatsAppReal();
+                        if (status === 'open') {
+                          setToastFeedback('🟢 WhatsApp conectado com sucesso!');
+                        } else {
+                          setToastFeedback('⏳ Ainda aguardando leitura. Atualizando QR Code...');
+                          await gerarQRCodeWhatsApp();
+                        }
+                        setTimeout(() => setToastFeedback(null), 4000);
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-brand-green hover:bg-emerald-600 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Já li o QR Code / Atualizar</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

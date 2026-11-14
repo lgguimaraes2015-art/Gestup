@@ -163,7 +163,7 @@ interface AppContextType {
   // Ações de Conexão WhatsApp & Automação
   conectarWhatsAppSimulado: (numero: string) => void;
   desconectarWhatsApp: () => void;
-  gerarQRCodeWhatsApp: () => void;
+  gerarQRCodeWhatsApp: () => Promise<string | null>;
   verificarStatusWhatsAppReal: () => Promise<string>;
   executarReguaManha08h: () => Promise<{ totalDisparados: number; detalhes: string[] }>;
   atualizarWhatsAppConfig: (updates: Partial<WhatsAppConfig>) => void;
@@ -3753,38 +3753,70 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const verificarStatusWhatsAppReal = async (): Promise<string> => {
     try {
-      const res = await fetch('/api/whatsapp/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiUrl: whatsAppConfig.api_url || 'https://evolution-api-production-ed7c.up.railway.app',
-          apiKey: whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393',
-          instanceName: whatsAppConfig.nome_instancia || 'gestup'
-        })
-      });
-      const data = await res.json().catch(() => null);
-      if (data?.success && data?.state === 'open') {
+      const urlApi = whatsAppConfig.api_url || 'http://localhost:8084';
+      const keyApi = whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393';
+      const instName = whatsAppConfig.nome_instancia || 'gestup';
+
+      let data: any = null;
+
+      // 1. Tenta via rota interna Next.js
+      try {
+        const res = await fetch('/api/whatsapp/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiUrl: urlApi,
+            apiKey: keyApi,
+            instanceName: instName
+          })
+        });
+        data = await res.json().catch(() => null);
+      } catch {}
+
+      // 2. Fallback direto no browser se rota interna não responder (ex: Vercel acessando máquina local)
+      if (!data || !data.success) {
+        try {
+          const directRes = await fetch(`${urlApi}/instance/fetchInstances`, {
+            headers: { 'apikey': keyApi }
+          });
+          if (directRes.ok) {
+            const list = await directRes.json();
+            const inst = Array.isArray(list) ? list.find((i: any) => i.name === instName) : list;
+            data = {
+              success: true,
+              state: inst?.connectionStatus || 'close',
+              connected: inst?.connectionStatus === 'open',
+              ownerFormatted: inst?.ownerJid ? inst.ownerJid.split('@')[0] : undefined
+            };
+          }
+        } catch {}
+      }
+
+      if (data?.success && (data?.state === 'open' || data?.connected)) {
         atualizarWhatsAppConfig({
           conectado: true,
           status: 'CONNECTED',
           numero_conectado: data.ownerFormatted || whatsAppConfig.numero_conectado || '+55 (19) 99208-0639',
-          ultima_sincronizacao: new Date().toLocaleString('pt-BR')
+          ultima_sincronizacao: new Date().toLocaleString('pt-BR'),
+          qr_code: undefined,
+          qrcode_base64: undefined
         });
         return 'open';
       } else {
-        atualizarWhatsAppConfig({
-          conectado: false,
-          status: 'DISCONNECTED',
-          ultima_sincronizacao: data?.error || 'Servidor offline / 404'
-        });
-        return 'close';
+        if (data?.qrcodeBase64) {
+          const qrF = data.qrcodeBase64.startsWith('data:')
+            ? data.qrcodeBase64
+            : `data:image/png;base64,${data.qrcodeBase64}`;
+          atualizarWhatsAppConfig({
+            qr_code: qrF,
+            qrcode_base64: qrF,
+            status: 'QRCODE',
+            conectado: false
+          });
+        }
+        return data?.state || 'close';
       }
     } catch (err) {
-      atualizarWhatsAppConfig({
-        conectado: false,
-        status: 'DISCONNECTED',
-        ultima_sincronizacao: 'Falha de conexão com a API'
-      });
       return 'close';
     }
   };
@@ -3879,16 +3911,77 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       conectado: false,
       status: 'DISCONNECTED',
-      numero_conectado: undefined
+      numero_conectado: undefined,
+      qr_code: undefined,
+      qrcode_base64: undefined
     }));
   };
 
-  const gerarQRCodeWhatsApp = () => {
-    setWhatsAppConfig(prev => ({
-      ...prev,
-      status: 'QRCODE',
-      conectado: false
-    }));
+  const gerarQRCodeWhatsApp = async (): Promise<string | null> => {
+    try {
+      const urlApi = whatsAppConfig.api_url || 'http://localhost:8084';
+      const keyApi = whatsAppConfig.api_key || '68A885CD-5F29-4269-949C-8AEB4D149393';
+      const instName = whatsAppConfig.nome_instancia || 'gestup';
+
+      let qrcodeBase64: string | null = null;
+
+      // 1. Tenta buscar via rota Next.js /api/whatsapp/status
+      try {
+        const res = await fetch('/api/whatsapp/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiUrl: urlApi, apiKey: keyApi, instanceName: instName })
+        });
+        const data = await res.json().catch(() => null);
+        if (data?.qrcodeBase64) {
+          qrcodeBase64 = data.qrcodeBase64;
+        } else if (data?.connected) {
+          atualizarWhatsAppConfig({
+            conectado: true,
+            status: 'CONNECTED',
+            numero_conectado: data.ownerFormatted || whatsAppConfig.numero_conectado
+          });
+          return null;
+        }
+      } catch (e) {
+        console.warn('Erro ao chamar /api/whatsapp/status:', e);
+      }
+
+      // 2. Fallback direto no navegador (caso o Next.js esteja na nuvem/Vercel e o Docker no localhost:8084 do cliente)
+      if (!qrcodeBase64) {
+        try {
+          const directRes = await fetch(`${urlApi}/instance/connect/${encodeURIComponent(instName)}`, {
+            method: 'GET',
+            headers: { 'apikey': keyApi }
+          });
+          if (directRes.ok) {
+            const directData = await directRes.json().catch(() => null);
+            qrcodeBase64 = directData?.base64 || directData?.qrcode?.base64 || null;
+          }
+        } catch (e2) {
+          console.warn('Erro ao chamar diretamente localhost:8084:', e2);
+        }
+      }
+
+      if (qrcodeBase64) {
+        const formattedQr = qrcodeBase64.startsWith('data:')
+          ? qrcodeBase64
+          : `data:image/png;base64,${qrcodeBase64}`;
+
+        atualizarWhatsAppConfig({
+          status: 'QRCODE',
+          conectado: false,
+          qr_code: formattedQr,
+          qrcode_base64: formattedQr
+        });
+        return formattedQr;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Falha geral em gerarQRCodeWhatsApp:', err);
+      return null;
+    }
   };
 
   return (

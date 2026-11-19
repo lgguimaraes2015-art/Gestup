@@ -4777,7 +4777,7 @@ export const initialDPEmpresasConfig: DPEmpresaConfig[] = [
     pcmso_vencimento: '2026-12-15', // Vencendo nos próximos 30 dias!
     pcmso_anexo_url: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800',
     pcmso_anexo_nome: 'PCMSO_2026_ClinicaOcupacional.pdf',
-    drive_folder_empresa_url: 'https://drive.google.com/drive/folders/the_black_burguer_dp_oficial',
+    drive_folder_empresa_url: 'https://drive.google.com/drive/folders/1n5YQVm5IOHob_gKyFQFaXbjjLiGPiRzL',
     updated_at: '2026-11-01'
   },
   {

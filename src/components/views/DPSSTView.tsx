@@ -117,10 +117,19 @@ export function DPSSTView() {
 
   // Helper para garantir que links do Google Drive nunca dêem 404
   const formatarLinkDriveSeguro = (url?: string, termoBusca?: string) => {
-    if (!url || url.includes('_oficial') || url.includes('_dp') || url.includes('_sst') || url.includes('_souza') || url.includes('_menezes') || url.includes('_adega') || url.includes('folders/')) {
+    if (!url) {
       return `https://drive.google.com/drive/search?q=${encodeURIComponent(termoBusca || 'finup')}`;
     }
-    return url;
+    const limpa = url.trim();
+    // Se for link direto real do Google Drive com ID de pasta ou arquivo válido
+    if (/drive\.google\.com\/(?:drive\/folders\/|file\/d\/)[a-zA-Z0-9_-]{15,}/.test(limpa)) {
+      return limpa.startsWith('http') ? limpa : `https://${limpa}`;
+    }
+    // Se for URL válida do Drive que não seja dummy/placeholder
+    if (limpa.startsWith('https://drive.google.com') && !limpa.includes('_oficial') && !limpa.includes('_dp_') && !limpa.includes('_sst_') && !limpa.includes('_souza') && !limpa.includes('_menezes') && !limpa.includes('_adega')) {
+      return limpa;
+    }
+    return `https://drive.google.com/drive/search?q=${encodeURIComponent(termoBusca || 'finup')}`;
   };
 
   // Helper de cálculo de datas de experiência

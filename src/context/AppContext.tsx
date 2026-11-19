@@ -1142,7 +1142,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (savedDPConfig) {
         try {
           const parsed = JSON.parse(savedDPConfig);
-          if (Array.isArray(parsed) && parsed.length > 0) setDPEmpresasConfig(parsed);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const sanitizado = parsed.map((c: DPEmpresaConfig) => {
+              if (c.empresa_id === '6a722218cec951fb77d80bb6' && (!c.drive_folder_empresa_url || c.drive_folder_empresa_url.includes('the_black_burguer_dp_oficial'))) {
+                return { ...c, drive_folder_empresa_url: 'https://drive.google.com/drive/folders/1n5YQVm5IOHob_gKyFQFaXbjjLiGPiRzL' };
+              }
+              return c;
+            });
+            setDPEmpresasConfig(sanitizado);
+          }
         } catch {}
       }
 
@@ -1150,7 +1158,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (savedDPFuncs) {
         try {
           const parsed = JSON.parse(savedDPFuncs);
-          if (Array.isArray(parsed) && parsed.length > 0) setDPFuncionarios(parsed);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const sanitizado = parsed.map((f: DPFuncionario) => {
+              if (f.nome_completo.toLowerCase().includes('samira') && (!f.drive_folder_funcionario_url || f.drive_folder_funcionario_url.includes('search?q=') || f.drive_folder_funcionario_url.includes('samira_'))) {
+                return { ...f, drive_folder_funcionario_url: 'https://drive.google.com/drive/folders/1KBQrzKeBYNl-4weaMznB9yx1sMASo03H' };
+              }
+              return f;
+            });
+            setDPFuncionarios(sanitizado);
+          }
         } catch {}
       }
 
@@ -4504,10 +4520,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       )
     );
 
+    const isSamira = ehRegistroSamira(tarefa) || nomeColaborador.toLowerCase().includes('samira');
+    const folderDriveSamira = 'https://drive.google.com/drive/folders/1KBQrzKeBYNl-4weaMznB9yx1sMASo03H';
+
     if (funcExistente) {
       funcId = funcExistente.id;
+      const updates: Partial<DPFuncionario> = {};
       if (arqFicha && !funcExistente.ficha_registro_pdf_url) {
-        updateDPFuncionario(funcExistente.id, { ficha_registro_pdf_url: arqFicha.url });
+        updates.ficha_registro_pdf_url = arqFicha.url;
+      }
+      if (isSamira) {
+        updates.drive_folder_funcionario_url = folderDriveSamira;
+      }
+      if (Object.keys(updates).length > 0) {
+        updateDPFuncionario(funcExistente.id, updates);
       }
     } else {
       const novoFunc: DPFuncionario = {
@@ -4528,7 +4554,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         vencimento_exp_1: exp1,
         vencimento_exp_2: exp2,
         status: 'Ativo',
-        drive_folder_funcionario_url: `https://drive.google.com/drive/search?q=${encodeURIComponent(nomeColaborador)}`,
+        drive_folder_funcionario_url: isSamira ? folderDriveSamira : `https://drive.google.com/drive/search?q=${encodeURIComponent(nomeColaborador)}`,
         ficha_registro_pdf_url: arqFicha?.url || (arquivosColetados[0]?.url)
       };
       addDPFuncionario(novoFunc);

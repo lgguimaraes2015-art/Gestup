@@ -345,6 +345,7 @@ interface AppContextType {
 
   sincronizarDPComTarefasGestup: () => { criadas: number; existentes: number; tarefasCriadas: string[] };
   promoverProcessoAdmissaoParaDP: (tarefa: Tarefa) => void;
+  zerarDadosDP: () => void;
 
   redefinirDadosPadrao: () => void;
 }
@@ -862,13 +863,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Carregar do localStorage com chave v2 e migração inteligente
   useEffect(() => {
     try {
-      // Limpa chaves legadas antigas para evitar cache desatualizado
-      localStorage.removeItem('gestup_tarefas');
-      localStorage.removeItem('gestup_clientes');
-      localStorage.removeItem('gestup_declaracoes');
-
       const savedTarefas = localStorage.getItem('gestup_v2_tarefas');
+      const legacyTarefas = localStorage.getItem('gestup_tarefas');
       let baseTarefas: Tarefa[] = [];
+
       if (savedTarefas) {
         try {
           const parsed = JSON.parse(savedTarefas);
@@ -878,13 +876,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       }
 
-      // Se não havia tarefas no localStorage, inicializa com initialTarefas
+      // Se v2 não continha tarefas, resgata da chave legado para preservar baixas e alterações
+      if (baseTarefas.length === 0 && legacyTarefas) {
+        try {
+          const parsedLegacy = JSON.parse(legacyTarefas);
+          if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+            baseTarefas = parsedLegacy;
+          }
+        } catch {}
+      }
+
+      // Se ainda vazio, inicializa com initialTarefas
       if (baseTarefas.length === 0) {
         baseTarefas = [...initialTarefas];
+      }
+
+      // Preservação Estrita de Baixas Efetuadas pelo Usuário
+      if (legacyTarefas) {
+        try {
+          const parsedLegacy: Tarefa[] = JSON.parse(legacyTarefas);
+          if (Array.isArray(parsedLegacy)) {
+            parsedLegacy.forEach(legT => {
+              if (legT.status === 'Concluída') {
+                const idx = baseTarefas.findIndex(b => b.id === legT.id || (b.titulo === legT.titulo && b.cliente_id === legT.cliente_id));
+                if (idx !== -1) {
+                  baseTarefas[idx] = {
+                    ...baseTarefas[idx],
+                    status: 'Concluída',
+                    data_conclusao: legT.data_conclusao || baseTarefas[idx].data_conclusao,
+                    arquivos_anexos: legT.arquivos_anexos || baseTarefas[idx].arquivos_anexos
+                  };
+                }
+              }
+            });
+          }
+        } catch {}
       } else {
         // Recuperação Segura Pós-Bug: se o mês 11/2026 foi esvaziado por reloads anteriores
-        // (ficando com 0 tarefas ou apenas com "Registro - Samira"), restaura as tarefas
-        // das competências 11/2026, 12/2026 e 01/2027 a partir de rawInitialTarefas sem perder as já existentes
+        // restaura tarefas das competências a partir de rawInitialTarefas sem perder as já existentes
         const tarefas11 = baseTarefas.filter(t => t.competencia === '11/2026');
         if (tarefas11.length <= 1) {
           const recuperaveis = rawInitialTarefas.filter(
@@ -1154,36 +1183,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       }
 
-      const savedDPFuncs = localStorage.getItem('gestup_v2_dp_funcionarios');
-      if (savedDPFuncs) {
-        try {
-          const parsed = JSON.parse(savedDPFuncs);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const sanitizado = parsed.map((f: DPFuncionario) => {
-              if (f.nome_completo.toLowerCase().includes('samira') && (!f.drive_folder_funcionario_url || f.drive_folder_funcionario_url.includes('search?q=') || f.drive_folder_funcionario_url.includes('samira_'))) {
-                return { ...f, drive_folder_funcionario_url: 'https://drive.google.com/drive/folders/1KBQrzKeBYNl-4weaMznB9yx1sMASo03H' };
-              }
-              return f;
-            });
-            setDPFuncionarios(sanitizado);
-          }
-        } catch {}
-      }
+      // Reset solicitado pelo usuário: Zerar módulo da gestão (DP & SST)
+      const jaZerouDP = localStorage.getItem('gestup_v2_dp_zerado_v4_limpo');
+      if (!jaZerouDP) {
+        localStorage.setItem('gestup_v2_dp_funcionarios', JSON.stringify([]));
+        localStorage.setItem('gestup_v2_dp_controle_vencimentos', JSON.stringify([]));
+        localStorage.setItem('gestup_v2_dp_diario_bordo', JSON.stringify([]));
+        localStorage.setItem('gestup_v2_dp_zerado_v4_limpo', 'true');
+        setDPFuncionarios([]);
+        setDPControleVencimentos([]);
+        setDPDiarioBordo([]);
+      } else {
+        const savedDPFuncs = localStorage.getItem('gestup_v2_dp_funcionarios');
+        if (savedDPFuncs) {
+          try {
+            const parsed = JSON.parse(savedDPFuncs);
+            if (Array.isArray(parsed)) setDPFuncionarios(parsed);
+          } catch {}
+        }
 
-      const savedDPVencs = localStorage.getItem('gestup_v2_dp_controle_vencimentos');
-      if (savedDPVencs) {
-        try {
-          const parsed = JSON.parse(savedDPVencs);
-          if (Array.isArray(parsed) && parsed.length > 0) setDPControleVencimentos(parsed);
-        } catch {}
-      }
+        const savedDPVencs = localStorage.getItem('gestup_v2_dp_controle_vencimentos');
+        if (savedDPVencs) {
+          try {
+            const parsed = JSON.parse(savedDPVencs);
+            if (Array.isArray(parsed)) setDPControleVencimentos(parsed);
+          } catch {}
+        }
 
-      const savedDPDiario = localStorage.getItem('gestup_v2_dp_diario_bordo');
-      if (savedDPDiario) {
-        try {
-          const parsed = JSON.parse(savedDPDiario);
-          if (Array.isArray(parsed) && parsed.length > 0) setDPDiarioBordo(parsed);
-        } catch {}
+        const savedDPDiario = localStorage.getItem('gestup_v2_dp_diario_bordo');
+        if (savedDPDiario) {
+          try {
+            const parsed = JSON.parse(savedDPDiario);
+            if (Array.isArray(parsed)) setDPDiarioBordo(parsed);
+          } catch {}
+        }
       }
     } catch {}
   }, []);
@@ -4601,6 +4634,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const zerarDadosDP = () => {
+    setDPFuncionarios([]);
+    setDPControleVencimentos([]);
+    setDPDiarioBordo([]);
+    try {
+      localStorage.setItem('gestup_v2_dp_funcionarios', JSON.stringify([]));
+      localStorage.setItem('gestup_v2_dp_controle_vencimentos', JSON.stringify([]));
+      localStorage.setItem('gestup_v2_dp_diario_bordo', JSON.stringify([]));
+    } catch {}
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -4756,7 +4800,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateDPOcorrencia,
         deleteDPOcorrencia,
         sincronizarDPComTarefasGestup,
-        promoverProcessoAdmissaoParaDP
+        promoverProcessoAdmissaoParaDP,
+        zerarDadosDP
       }}
     >
       {children}

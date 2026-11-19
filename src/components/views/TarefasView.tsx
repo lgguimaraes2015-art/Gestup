@@ -104,14 +104,33 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
   // Estados de Controle de Visualização e Filtros
   const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista');
-  const [competenciaSelecionada, setCompetenciaSelecionada] = useState<string>(() => obterCompetenciaAtual());
+  const [competenciaSelecionada, setCompetenciaSelecionada] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gestup_competencia_selecionada');
+      if (saved) return saved;
+    }
+    return '10/2026';
+  });
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>('todos');
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');
   const [filtroDepto, setFiltroDepto] = useState<string>('todos');
   const [filtroBusca, setFiltroBusca] = useState<string>('');
   
-  // Requisito Clean UI: Por padrão tarefas concluídas NÃO aparecem
-  const [exibirConcluidas, setExibirConcluidas] = useState<boolean>(false);
+  // Por padrão tarefas concluídas FICAM VISÍVEIS para não sumir com o trabalho/baixas do usuário
+  const [exibirConcluidas, setExibirConcluidas] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gestup_exibir_concluidas');
+      if (saved !== null) return saved === 'true';
+    }
+    return true;
+  });
+
+  const handleSelecionarCompetencia = (novaComp: string) => {
+    setCompetenciaSelecionada(novaComp);
+    try {
+      localStorage.setItem('gestup_competencia_selecionada', novaComp);
+    } catch {}
+  };
 
   // Estados dos Modais
   const [prorrogarModalTarefa, setProrrogarModalTarefa] = useState<Tarefa | null>(null);
@@ -232,7 +251,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
   // Navegação de mês anterior e próximo
   const handleMudarMes = (direcao: 'anterior' | 'proximo') => {
     if (competenciaSelecionada === 'todas') {
-      setCompetenciaSelecionada(obterCompetenciaAtual());
+      handleSelecionarCompetencia(obterCompetenciaAtual());
       return;
     }
     const [mes, ano] = competenciaSelecionada.split('/').map(Number);
@@ -241,7 +260,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     if (novoM > 12) { novoM = 1; novoA += 1; }
     if (novoM < 1) { novoM = 12; novoA -= 1; }
     const novaComp = `${String(novoM).padStart(2, '0')}/${novoA}`;
-    setCompetenciaSelecionada(novaComp);
+    handleSelecionarCompetencia(novaComp);
   };
 
   // Filtragem por Competência
@@ -329,7 +348,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     });
 
     setFeedbackToast(`🎉 ${clonadas} tarefas replicadas com sucesso para a competência ${proxComp}!`);
-    setCompetenciaSelecionada(proxComp);
+    handleSelecionarCompetencia(proxComp);
     setTimeout(() => setFeedbackToast(null), 5000);
   };
 
@@ -843,7 +862,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
           {/* Dropdown de Competências Existentes */}
           <select
             value={competenciaSelecionada}
-            onChange={e => setCompetenciaSelecionada(e.target.value)}
+            onChange={e => handleSelecionarCompetencia(e.target.value)}
             className="text-xs rounded-xl border border-slate-200 px-3 py-2.5 bg-white text-slate-800 font-bold focus:ring-2 focus:ring-brand-blue/20"
           >
             <option value="todas">Ver Todas as Competências ({tarefas.length})</option>
@@ -1063,9 +1082,15 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
             <option value="Outros">Outros</option>
           </select>
 
-          {/* NOVO: Toggle Clean UI - Exibir/Ocultar Concluídas */}
+          {/* Toggle Clean UI - Exibir/Ocultar Concluídas */}
           <button
-            onClick={() => setExibirConcluidas(!exibirConcluidas)}
+            onClick={() => {
+              const novo = !exibirConcluidas;
+              setExibirConcluidas(novo);
+              try {
+                localStorage.setItem('gestup_exibir_concluidas', String(novo));
+              } catch {}
+            }}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
               exibirConcluidas
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-sm'
@@ -1075,13 +1100,13 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
           >
             {exibirConcluidas ? (
               <>
-                <Eye className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Concluídas ({totalConcluidasNaCompetencia})</span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Concluídas Visíveis ({totalConcluidasNaCompetencia})</span>
               </>
             ) : (
               <>
-                <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                <span>Ocultar Concluídas ({totalConcluidasNaCompetencia})</span>
+                <Eye className="w-3.5 h-3.5 text-slate-400" />
+                <span>Mostrar Concluídas ({totalConcluidasNaCompetencia})</span>
               </>
             )}
           </button>

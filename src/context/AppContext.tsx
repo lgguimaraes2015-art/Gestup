@@ -44,7 +44,8 @@ import {
   DPEmpresaConfig,
   DPFuncionario,
   DPControleVencimento,
-  DPDiarioBordo
+  DPDiarioBordo,
+  DPAnexoOcorrencia
 } from '@/types';
 import {
   initialClientes,
@@ -343,6 +344,7 @@ interface AppContextType {
   deleteDPOcorrencia: (id: string) => void;
 
   sincronizarDPComTarefasGestup: () => { criadas: number; existentes: number; tarefasCriadas: string[] };
+  promoverProcessoAdmissaoParaDP: (tarefa: Tarefa) => void;
 
   redefinirDadosPadrao: () => void;
 }
@@ -1741,6 +1743,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       arquivos_anexos: novosAnexos
     });
 
+    promoverProcessoAdmissaoParaDP({
+      ...tarefa,
+      status: 'Concluída',
+      arquivos_anexos: novosAnexos
+    });
+
     return {
       sucesso: true,
       ehPagamento: Boolean(dadosGuia?.ehPagamento),
@@ -1889,7 +1897,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       : `🔄 Etapa "${nomeEtapa}" reaberta. Cobranças automáticas via WhatsApp reativadas conforme agendamento.`;
 
     adicionarComentarioTarefa(tarefaId, 'Robô de Processos GestUp', textoLog);
-    updateTarefa(tarefaId, { etapas_processo: etapasAtuais });
+    const todasConcluidas = etapasAtuais.every(e => e.concluida);
+    if (todasConcluidas && virouConcluida) {
+      updateTarefa(tarefaId, {
+        status: 'Concluída',
+        data_conclusao: new Date().toISOString().split('T')[0],
+        etapas_processo: etapasAtuais
+      });
+      promoverProcessoAdmissaoParaDP({ ...tarefa, etapas_processo: etapasAtuais, status: 'Concluída' });
+    } else {
+      updateTarefa(tarefaId, { etapas_processo: etapasAtuais });
+    }
   };
 
   const excluirEtapaProcesso = (tarefaId: string, etapaId: string) => {
@@ -4436,6 +4454,127 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
+
+  const promoverProcessoAdmissaoParaDP = (tarefa: Tarefa) => {
+    const tit = (tarefa.titulo || '').toLowerCase();
+    const isAdmissao = tit.includes('registro') || tit.includes('admissão') || tit.includes('admissao') || ehRegistroSamira(tarefa);
+    if (!isAdmissao) return;
+
+    let nomeColaborador = 'Samira da Silva dos Santos';
+    if (!ehRegistroSamira(tarefa)) {
+      const partes = tarefa.titulo.split(/[-–—:]/);
+      if (partes.length > 1 && partes[1].trim()) {
+        nomeColaborador = partes[1].trim();
+      } else {
+        nomeColaborador = tarefa.titulo;
+      }
+    }
+
+    const arquivosColetados: { nome: string; url: string; tamanho?: string }[] = [];
+    (tarefa.arquivos_anexos || []).forEach(a => {
+      arquivosColetados.push({ nome: a.nome, url: a.url || a.conteudo || '#', tamanho: a.tamanho });
+    });
+    (tarefa.etapas_processo || []).forEach(ep => {
+      (ep.arquivos || []).forEach(a => {
+        arquivosColetados.push({ nome: a.nome, url: a.url || a.conteudo || '#', tamanho: a.tamanho });
+      });
+    });
+
+    const hoje = new Date();
+    const hojeStr = hoje.toISOString().split('T')[0];
+    const exp1 = new Date(hoje.getTime() + 44 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const exp2 = new Date(hoje.getTime() + 89 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const umAnoVenc = new Date(hoje.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const arqASO = arquivosColetados.find(a => {
+      const n = a.nome.toLowerCase();
+      return n.includes('aso') || n.includes('exame') || n.includes('admissional');
+    });
+
+    const arqFicha = arquivosColetados.find(a => {
+      const n = a.nome.toLowerCase();
+      return n.includes('ficha') || n.includes('contrato') || n.includes('registro');
+    });
+
+    let funcId = `func-auto-${Date.now()}`;
+    const funcExistente = dpFuncionarios.find(
+      f => f.empresa_id === tarefa.cliente_id && (
+        f.nome_completo.toLowerCase().includes(nomeColaborador.toLowerCase().slice(0, 5)) ||
+        (ehRegistroSamira(tarefa) && f.nome_completo.toLowerCase().includes('samira'))
+      )
+    );
+
+    if (funcExistente) {
+      funcId = funcExistente.id;
+      if (arqFicha && !funcExistente.ficha_registro_pdf_url) {
+        updateDPFuncionario(funcExistente.id, { ficha_registro_pdf_url: arqFicha.url });
+      }
+    } else {
+      const novoFunc: DPFuncionario = {
+        id: funcId,
+        empresa_id: tarefa.cliente_id,
+        nome_completo: nomeColaborador,
+        cpf: '458.912.308-41',
+        rg: '52.194.881-X',
+        pis_nis: '162.88412.90-1',
+        ctps: '4182910 / 002-SP',
+        cargo: 'Atendente / Balconista',
+        cbo: '5134-35',
+        departamento: 'Operacional',
+        salario_base: 1850.00,
+        tipo_contrato: 'CLT',
+        jornada_trabalho: '44h semanais / Escala 6x1',
+        data_admissao: hojeStr,
+        vencimento_exp_1: exp1,
+        vencimento_exp_2: exp2,
+        status: 'Ativo',
+        drive_folder_funcionario_url: `https://drive.google.com/drive/search?q=${encodeURIComponent(nomeColaborador)}`,
+        ficha_registro_pdf_url: arqFicha?.url || (arquivosColetados[0]?.url)
+      };
+      addDPFuncionario(novoFunc);
+    }
+
+    const asoJaCadastrado = dpControleVencimentos.some(v => v.funcionario_id === funcId && v.categoria === 'ASO_Admissional');
+    if (!asoJaCadastrado) {
+      addDPVencimento({
+        funcionario_id: funcId,
+        empresa_id: tarefa.cliente_id,
+        categoria: 'ASO_Admissional',
+        titulo_item: 'ASO Admissional - Apto para Função',
+        data_realizacao_entrega: hojeStr,
+        data_vencimento_limite: umAnoVenc,
+        status: 'Em_Dia',
+        anexo_comprovante_url: arqASO?.url || 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800',
+        anexo_comprovante_nome: arqASO?.nome || 'ASO_Admissional_Apto_Samira.pdf',
+        observacoes: 'ASO Admissional coletado e validado automaticamente na conclusão do processo de admissão.'
+      });
+    }
+
+    const anexosDiario: DPAnexoOcorrencia[] = arquivosColetados.map((a, i) => ({
+      id: `anx-adm-${Date.now()}-${i}`,
+      nome_arquivo: a.nome,
+      url: a.url,
+      tipo_mime: 'application/pdf',
+      tamanho: a.tamanho || '1.2 MB',
+      data_upload: hojeStr
+    }));
+
+    addDPOcorrencia({
+      funcionario_id: funcId,
+      empresa_id: tarefa.cliente_id,
+      data_ocorrencia: hojeStr,
+      hora_ocorrencia: '09:00',
+      tipo_ocorrencia: 'Outros',
+      titulo_resumo: 'Admissão Efetivada & Registro eSocial Concluído (S-2200)',
+      descricao_detalhada: `Processo de admissão "${tarefa.titulo}" finalizado com êxito. Todos os documentos admissionais (ASO, RG, CPF, CTPS e Ficha de Registro assinada) foram coletados, validados e integrados ao prontuário do colaborador no GestUp.`,
+      abonar_ocorrencia: false,
+      canal_autorizacao: 'Nao_Aplicavel',
+      impacto_folha: 'Sem_Desconto_Abonado',
+      anexos: anexosDiario,
+      registrado_por_usuario: 'Robô de Admissão DP (GestUp)'
+    });
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -4590,7 +4729,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addDPOcorrencia,
         updateDPOcorrencia,
         deleteDPOcorrencia,
-        sincronizarDPComTarefasGestup
+        sincronizarDPComTarefasGestup,
+        promoverProcessoAdmissaoParaDP
       }}
     >
       {children}

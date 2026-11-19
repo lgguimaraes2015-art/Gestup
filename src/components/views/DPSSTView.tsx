@@ -115,6 +115,14 @@ export function DPSSTView() {
   const mesAtual = hoje.getMonth() + 1;
   const anoAtual = hoje.getFullYear();
 
+  // Helper para garantir que links do Google Drive nunca dêem 404
+  const formatarLinkDriveSeguro = (url?: string, termoBusca?: string) => {
+    if (!url || url.includes('_oficial') || url.includes('_dp') || url.includes('_sst') || url.includes('_souza') || url.includes('_menezes') || url.includes('_adega') || url.includes('folders/')) {
+      return `https://drive.google.com/drive/search?q=${encodeURIComponent(termoBusca || 'finup')}`;
+    }
+    return url;
+  };
+
   // Helper de cálculo de datas de experiência
   const calcularDatasExperiencia = (admissaoStr: string) => {
     if (!admissaoStr) return { exp1: '', exp2: '' };
@@ -994,29 +1002,16 @@ export function DPSSTView() {
 
                     {/* Ações: Google Drive & Configuração */}
                     <div className="pt-3 border-t border-slate-100 space-y-2">
-                      {cfg.drive_folder_empresa_url ? (
-                        <a
-                          href={cfg.drive_folder_empresa_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-100 text-brand-blue font-bold text-xs transition-all"
-                        >
-                          <FolderOpen className="w-4 h-4 text-brand-blue" />
-                          <span>Abrir Pasta da Empresa no Drive</span>
-                          <ExternalLink className="w-3.5 h-3.5 opacity-70" />
-                        </a>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEmpresaEmEdicao(cfg);
-                            setConfigEmpresaModalOpen(true);
-                          }}
-                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium text-xs transition-all"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Vincular Pasta do Google Drive</span>
-                        </button>
-                      )}
+                      <a
+                        href={formatarLinkDriveSeguro(cfg.drive_folder_empresa_url, cli.nome)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-100 text-brand-blue font-bold text-xs transition-all"
+                      >
+                        <FolderOpen className="w-4 h-4 text-brand-blue" />
+                        <span>Abrir Pasta da Empresa no Drive</span>
+                        <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                      </a>
 
                       <button
                         onClick={() => {
@@ -1409,24 +1404,26 @@ export function DPSSTView() {
                       <p className="text-xs text-slate-500">
                         Acesse a pasta na nuvem onde ficam armazenados holerites, cópias de documentos e atestados em alta resolução.
                       </p>
-                      {funcionarioSelecionado.drive_folder_funcionario_url ? (
+                      <div className="space-y-2">
                         <a
-                          href={funcionarioSelecionado.drive_folder_funcionario_url}
+                          href={formatarLinkDriveSeguro(funcionarioSelecionado.drive_folder_funcionario_url, funcionarioSelecionado.nome_completo)}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-brand-blue font-bold text-xs transition-all"
+                          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-brand-blue font-bold text-xs transition-all shadow-xs"
                         >
-                          <span>Acessar Pasta no Google Drive</span>
+                          <FolderOpen className="w-4 h-4 text-brand-blue" />
+                          <span>Abrir / Localizar Pasta no Google Drive</span>
                           <ExternalLink className="w-4 h-4" />
                         </a>
-                      ) : (
-                        <div className="flex items-center gap-2">
+
+                        <div className="flex items-center gap-1.5 pt-1">
                           <input
                             type="text"
-                            placeholder="Cole o link do Google Drive aqui..."
-                            className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none"
+                            placeholder="Vincular link próprio do Drive (ex: drive.google.com/drive/folders/...)"
+                            defaultValue={funcionarioSelecionado.drive_folder_funcionario_url || ''}
+                            className="flex-1 px-3 py-1.5 rounded-xl border border-slate-200 text-[11px] outline-none bg-slate-50 focus:bg-white"
                             onBlur={e => {
-                              if (e.target.value.trim()) {
+                              if (e.target.value.trim() && e.target.value.trim() !== funcionarioSelecionado.drive_folder_funcionario_url) {
                                 updateDPFuncionario(funcionarioSelecionado.id, {
                                   drive_folder_funcionario_url: e.target.value.trim()
                                 });
@@ -1435,7 +1432,7 @@ export function DPSSTView() {
                             }}
                           />
                         </div>
-                      )}
+                      </div>
                     </div>
 
                     {/* Ficha de Registro Assinada */}

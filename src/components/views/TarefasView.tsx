@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
-import { obterCompetenciaAtual } from '@/lib/dateUtils';
+import { obterCompetenciaAtual, ehRegistroSamira } from '@/lib/dateUtils';
 import {
   Tarefa,
   StatusTarefa,
@@ -93,7 +93,8 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
     gerarTarefasAteJaneiro2027,
     restaurarTarefasPadraoCarteira,
     setActiveTab,
-    modelosMensagens
+    modelosMensagens,
+    promoverProcessoAdmissaoParaDP
   } = useApp();
 
   // Referências para Inputs de Arquivos Reais
@@ -2765,6 +2766,34 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
 
               {/* Corpo com Rolagem */}
               <div className="p-6 flex-1 overflow-y-auto space-y-6 text-xs">
+                {/* Banner de Integração Automática com DP & SST */}
+                {(ehRegistroSamira(tarefaLive) || tarefaLive.titulo.toLowerCase().includes('admissão') || tarefaLive.titulo.toLowerCase().includes('registro')) && (
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                        <Sparkles className="w-4 h-4 text-emerald-600" />
+                        <span>Automação Integrada: Admissão & Prontuário DP</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 max-w-lg">
+                        Ao concluir o processo de admissão, o robô do GestUp coleta todos os documentos anexados (ASO, RG, CPF, CTPS), cria automaticamente o colaborador na empresa <strong>{tarefaLive.cliente_nome}</strong>, cadastra o ASO Admissional com validade de 1 ano e gera o prontuário trabalhista com link do Drive!
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        promoverProcessoAdmissaoParaDP(tarefaLive);
+                        setFeedbackToast(`🎉 Registro e Prontuário de ${tarefaLive.titulo} criados com sucesso no módulo de DP & SST da empresa ${tarefaLive.cliente_nome}!`);
+                        setTimeout(() => setFeedbackToast(null), 5000);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Efetivar Admissão no DP Agora</span>
+                    </button>
+                  </div>
+                )}
+
                 {/* Banner Oficial da Regra de Cobrança das 08h */}
                 <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/90 flex items-start gap-3">
                   <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700 shrink-0 mt-0.5">

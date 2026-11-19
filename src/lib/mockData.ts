@@ -422,7 +422,29 @@ export const tarefaRegistroSamiraPadrao: Tarefa = {
       data_limite: "2026-11-06",
       responsavel: "Ygor",
       concluida: true,
-      arquivos: [],
+      arquivos: [
+        {
+          id: "arq-sam-aso",
+          nome: "ASO_Admissional_Apto_Samira.pdf",
+          url: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800",
+          tamanho: "1.4 MB",
+          data_upload: "2026-11-04"
+        },
+        {
+          id: "arq-sam-rg-cpf",
+          nome: "RG_CPF_Digital_Samira.pdf",
+          url: "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800",
+          tamanho: "980 KB",
+          data_upload: "2026-11-04"
+        },
+        {
+          id: "arq-sam-ctps",
+          nome: "Carteira_Trabalho_Digital_Samira.pdf",
+          url: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800",
+          tamanho: "1.1 MB",
+          data_upload: "2026-11-04"
+        }
+      ],
       cobrar_whatsapp: true,
       configuracao_cobranca: {
         habilitado: true,
@@ -451,7 +473,15 @@ export const tarefaRegistroSamiraPadrao: Tarefa = {
       data_limite: "2026-11-10",
       responsavel: "Guilherme",
       concluida: false,
-      arquivos: [],
+      arquivos: [
+        {
+          id: "arq-sam-ficha",
+          nome: "Ficha_Registro_e_Contrato_Experiencia_Assinado_Samira.pdf",
+          url: "https://images.unsplash.com/photo-1568667256549-094345857637?w=800",
+          tamanho: "1.8 MB",
+          data_upload: "2026-11-05"
+        }
+      ],
       cobrar_whatsapp: true,
       configuracao_cobranca: {
         habilitado: true,

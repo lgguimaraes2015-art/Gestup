@@ -44,7 +44,8 @@ export function Sidebar() {
     toggleSidebar,
     mobileMenuOpen,
     setMobileMenuOpen,
-    empresasRadar
+    empresasRadar,
+    userRole
   } = useApp();
 
   const tarefasAtrasadas = tarefas.filter(t => t.status === 'Atrasada').length;
@@ -79,6 +80,13 @@ export function Sidebar() {
           badgeDot: tarefasAtrasadas > 0
         },
         {
+          id: 'dp-sst',
+          label: 'Gestão de DP & SST',
+          icon: ShieldCheck,
+          badge: 'NOVO',
+          highlight: 'blue'
+        },
+        {
           id: 'clientes',
           label: 'Clientes & Regimes',
           icon: Users
@@ -88,11 +96,13 @@ export function Sidebar() {
           label: 'Declarações Fiscais',
           icon: FileText
         },
-        {
-          id: 'financeiro',
-          label: 'Financeiro & Fechamento',
-          icon: DollarSign
-        }
+        ...(userRole !== 'operacional_dp' ? [
+          {
+            id: 'financeiro',
+            label: 'Financeiro & Fechamento',
+            icon: DollarSign
+          }
+        ] : [])
       ]
     },
     {

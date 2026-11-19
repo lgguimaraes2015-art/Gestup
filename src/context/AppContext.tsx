@@ -39,7 +39,12 @@ import {
   DocumentoLegalCliente,
   TarefaEmpresaConfig,
   SubprocessoAtualizacao,
-  ComentarioItem
+  ComentarioItem,
+  UserRole,
+  DPEmpresaConfig,
+  DPFuncionario,
+  DPControleVencimento,
+  DPDiarioBordo
 } from '@/types';
 import {
   initialClientes,
@@ -58,7 +63,11 @@ import {
   initialDocumentosPortal,
   initialSolicitacoesPortal,
   tarefaRegistroSamiraPadrao,
-  rawInitialTarefas
+  rawInitialTarefas,
+  initialDPEmpresasConfig,
+  initialDPFuncionarios,
+  initialDPControleVencimentos,
+  initialDPDiarioBordo
 } from '@/lib/mockData';
 import {
   obterCompetenciaAtual,
@@ -309,6 +318,31 @@ interface AppContextType {
   adicionarDocumentoLegalCliente: (clienteId: string, doc: Omit<DocumentoLegalCliente, 'id' | 'data_upload'>) => void;
   removerDocumentoLegalCliente: (clienteId: string, docId: string) => void;
   atualizarAcessoPortalCliente: (clienteId: string, credenciais: CredenciaisPortalCliente) => void;
+
+  // Perfil de Acesso & RBAC
+  userRole: UserRole;
+  setUserRole: (role: UserRole) => void;
+
+  // Departamento Pessoal, SST & Prontuário Trabalhista
+  dpEmpresasConfig: DPEmpresaConfig[];
+  dpFuncionarios: DPFuncionario[];
+  dpControleVencimentos: DPControleVencimento[];
+  dpDiarioBordo: DPDiarioBordo[];
+
+  salvarDPEmpresaConfig: (config: DPEmpresaConfig) => void;
+  addDPFuncionario: (func: Omit<DPFuncionario, 'id'>) => void;
+  updateDPFuncionario: (id: string, updates: Partial<DPFuncionario>) => void;
+  deleteDPFuncionario: (id: string) => void;
+
+  addDPVencimento: (venc: Omit<DPControleVencimento, 'id'>) => void;
+  updateDPVencimento: (id: string, updates: Partial<DPControleVencimento>) => void;
+  deleteDPVencimento: (id: string) => void;
+
+  addDPOcorrencia: (ocorr: Omit<DPDiarioBordo, 'id' | 'created_at'>) => void;
+  updateDPOcorrencia: (id: string, updates: Partial<DPDiarioBordo>) => void;
+  deleteDPOcorrencia: (id: string) => void;
+
+  sincronizarDPComTarefasGestup: () => { criadas: number; existentes: number; tarefasCriadas: string[] };
 
   redefinirDadosPadrao: () => void;
 }
@@ -715,9 +749,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     { id: 'ofx-4', fitid: 'PICPAY-20261004-04', tipo: 'CREDIT', data: '2026-10-06', valor: 1500, descricao: 'TRANSFERENCIA PIX MACDOG GOURMET', conciliado: false, banco: 'PicPay Empresas' }
   ]);
 
+  // Perfil de Acesso & RBAC (admin_socio, operacional_dp, fiscal_contabil)
+  const [userRole, setUserRoleState] = useState<UserRole>('admin_socio');
+
+  // Módulo DP, SST & Prontuário
+  const [dpEmpresasConfig, setDPEmpresasConfig] = useState<DPEmpresaConfig[]>(initialDPEmpresasConfig);
+  const [dpFuncionarios, setDPFuncionarios] = useState<DPFuncionario[]>(initialDPFuncionarios);
+  const [dpControleVencimentos, setDPControleVencimentos] = useState<DPControleVencimento[]>(initialDPControleVencimentos);
+  const [dpDiarioBordo, setDPDiarioBordo] = useState<DPDiarioBordo[]>(initialDPDiarioBordo);
+
+  const saveDPEmpresasConfig = (dados: DPEmpresaConfig[]) => {
+    setDPEmpresasConfig(dados);
+    try {
+      localStorage.setItem('gestup_v2_dp_empresas_config', JSON.stringify(dados));
+    } catch {}
+  };
+
+  const saveDPFuncionarios = (dados: DPFuncionario[]) => {
+    setDPFuncionarios(dados);
+    try {
+      localStorage.setItem('gestup_v2_dp_funcionarios', JSON.stringify(dados));
+    } catch {}
+  };
+
+  const saveDPControleVencimentos = (dados: DPControleVencimento[]) => {
+    setDPControleVencimentos(dados);
+    try {
+      localStorage.setItem('gestup_v2_dp_controle_vencimentos', JSON.stringify(dados));
+    } catch {}
+  };
+
+  const saveDPDiarioBordo = (dados: DPDiarioBordo[]) => {
+    setDPDiarioBordo(dados);
+    try {
+      localStorage.setItem('gestup_v2_dp_diario_bordo', JSON.stringify(dados));
+    } catch {}
+  };
+
   // A TELA PRINCIPAL AGORA É O DASHBOARD (Power BI)
   const [activeModule, setActiveModule] = useState<'operacional' | 'crm' | 'automacoes' | 'configuracoes'>('operacional');
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+
+  const setUserRole = (role: UserRole) => {
+    setUserRoleState(role);
+    try {
+      localStorage.setItem('gestup_user_role', role);
+    } catch {}
+    if (role === 'operacional_dp') {
+      setActiveTab('dp-sst');
+      setActiveModule('operacional');
+    }
+  };
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
@@ -1040,6 +1122,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(parsed) && parsed.length > 0) {
             setSolicitacoesPortal(parsed);
           }
+        } catch {}
+      }
+
+      // 10. Perfil de Acesso & RBAC
+      const savedRole = localStorage.getItem('gestup_user_role') as UserRole | null;
+      if (savedRole && (savedRole === 'admin_socio' || savedRole === 'operacional_dp' || savedRole === 'fiscal_contabil')) {
+        setUserRoleState(savedRole);
+        if (savedRole === 'operacional_dp') {
+          setActiveTab('dp-sst');
+          setActiveModule('operacional');
+        }
+      }
+
+      // 11. Departamento Pessoal & SST
+      const savedDPConfig = localStorage.getItem('gestup_v2_dp_empresas_config');
+      if (savedDPConfig) {
+        try {
+          const parsed = JSON.parse(savedDPConfig);
+          if (Array.isArray(parsed) && parsed.length > 0) setDPEmpresasConfig(parsed);
+        } catch {}
+      }
+
+      const savedDPFuncs = localStorage.getItem('gestup_v2_dp_funcionarios');
+      if (savedDPFuncs) {
+        try {
+          const parsed = JSON.parse(savedDPFuncs);
+          if (Array.isArray(parsed) && parsed.length > 0) setDPFuncionarios(parsed);
+        } catch {}
+      }
+
+      const savedDPVencs = localStorage.getItem('gestup_v2_dp_controle_vencimentos');
+      if (savedDPVencs) {
+        try {
+          const parsed = JSON.parse(savedDPVencs);
+          if (Array.isArray(parsed) && parsed.length > 0) setDPControleVencimentos(parsed);
+        } catch {}
+      }
+
+      const savedDPDiario = localStorage.getItem('gestup_v2_dp_diario_bordo');
+      if (savedDPDiario) {
+        try {
+          const parsed = JSON.parse(savedDPDiario);
+          if (Array.isArray(parsed) && parsed.length > 0) setDPDiarioBordo(parsed);
         } catch {}
       }
     } catch {}
@@ -3984,6 +4109,333 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+
+  // ==========================================
+  // DEPARTAMENTO PESSOAL, SST & DIÁRIO DE BORDO
+  // ==========================================
+  const salvarDPEmpresaConfig = (config: DPEmpresaConfig) => {
+    const existe = dpEmpresasConfig.some(c => c.id === config.id || c.empresa_id === config.empresa_id);
+    let atualizado: DPEmpresaConfig[];
+    if (existe) {
+      atualizado = dpEmpresasConfig.map(c => (c.id === config.id || c.empresa_id === config.empresa_id ? { ...c, ...config } : c));
+    } else {
+      atualizado = [...dpEmpresasConfig, { ...config, id: config.id || `dp-cfg-${Date.now()}` }];
+    }
+    saveDPEmpresasConfig(atualizado);
+  };
+
+  const addDPFuncionario = (funcData: Omit<DPFuncionario, 'id'>) => {
+    const novo: DPFuncionario = {
+      ...funcData,
+      id: `func-${Date.now()}`
+    };
+    const atualizado = [novo, ...dpFuncionarios];
+    saveDPFuncionarios(atualizado);
+  };
+
+  const updateDPFuncionario = (id: string, updates: Partial<DPFuncionario>) => {
+    const atualizado = dpFuncionarios.map(f => (f.id === id ? { ...f, ...updates } : f));
+    saveDPFuncionarios(atualizado);
+  };
+
+  const deleteDPFuncionario = (id: string) => {
+    const atualizado = dpFuncionarios.filter(f => f.id !== id);
+    saveDPFuncionarios(atualizado);
+  };
+
+  const addDPVencimento = (vencData: Omit<DPControleVencimento, 'id'>) => {
+    const novo: DPControleVencimento = {
+      ...vencData,
+      id: `venc-${Date.now()}`
+    };
+    const atualizado = [novo, ...dpControleVencimentos];
+    saveDPControleVencimentos(atualizado);
+  };
+
+  const updateDPVencimento = (id: string, updates: Partial<DPControleVencimento>) => {
+    const atualizado = dpControleVencimentos.map(v => (v.id === id ? { ...v, ...updates } : v));
+    saveDPControleVencimentos(atualizado);
+  };
+
+  const deleteDPVencimento = (id: string) => {
+    const atualizado = dpControleVencimentos.filter(v => v.id !== id);
+    saveDPControleVencimentos(atualizado);
+  };
+
+  const addDPOcorrencia = (ocorrData: Omit<DPDiarioBordo, 'id' | 'created_at'>) => {
+    const agora = new Date();
+    const agoraStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')} ${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+    const nova: DPDiarioBordo = {
+      ...ocorrData,
+      id: `db-${Date.now()}`,
+      created_at: agoraStr
+    };
+    const atualizado = [nova, ...dpDiarioBordo];
+    saveDPDiarioBordo(atualizado);
+  };
+
+  const updateDPOcorrencia = (id: string, updates: Partial<DPDiarioBordo>) => {
+    const atualizado = dpDiarioBordo.map(o => (o.id === id ? { ...o, ...updates } : o));
+    saveDPDiarioBordo(atualizado);
+  };
+
+  const deleteDPOcorrencia = (id: string) => {
+    const atualizado = dpDiarioBordo.filter(o => o.id !== id);
+    saveDPDiarioBordo(atualizado);
+  };
+
+  const sincronizarDPComTarefasGestup = () => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const limite30Dias = new Date(hoje.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const compAtual = obterCompetenciaAtual(); // Ex: '11/2026'
+
+    let totalCriadas = 0;
+    let totalExistentes = 0;
+    const tarefasCriadasNomes: string[] = [];
+    const novasTarefas: Tarefa[] = [];
+
+    // 1. Vencimentos de ASOs, EPIs, Férias, 13º
+    dpControleVencimentos.forEach(venc => {
+      if (venc.status === 'Concluido_Historico') return;
+      const dataVenc = new Date(venc.data_vencimento_limite + 'T00:00:00');
+      if (dataVenc <= limite30Dias) {
+        const func = dpFuncionarios.find(f => f.id === venc.funcionario_id);
+        const cli = clientes.find(c => c.id === venc.empresa_id);
+        const funcNome = func ? func.nome_completo : 'Colaborador';
+        const cliNome = cli ? cli.nome : 'Empresa';
+        const tituloTarefa = `[DP/SST] ${venc.categoria.replace(/_/g, ' ')}: ${venc.titulo_item} - ${funcNome}`;
+
+        const jaExiste = tarefas.some(t => t.cliente_id === venc.empresa_id && t.titulo === tituloTarefa && t.competencia === compAtual)
+          || novasTarefas.some(t => t.cliente_id === venc.empresa_id && t.titulo === tituloTarefa && t.competencia === compAtual);
+
+        if (jaExiste) {
+          totalExistentes++;
+        } else {
+          totalCriadas++;
+          tarefasCriadasNomes.push(tituloTarefa);
+          novasTarefas.push({
+            id: `t-dp-venc-${venc.id}-${Date.now()}`,
+            titulo: tituloTarefa,
+            descricao: `Controle automático de DP & SST: ${venc.observacoes || 'Renovação obrigatória'} do colaborador ${funcNome} (${cliNome}). Vencimento: ${venc.data_vencimento_limite}.`,
+            tipo: 'Recorrente',
+            status: 'Pendente',
+            prioridade: dataVenc < hoje ? 'Urgente' : 'Alta',
+            cliente_id: venc.empresa_id,
+            cliente_nome: cliNome,
+            responsavel: 'Ygor',
+            data_prazo_legal: venc.data_vencimento_limite,
+            data_prazo_meta: venc.data_vencimento_limite,
+            categoria: 'Pessoal',
+            competencia: compAtual,
+            tempo_gasto_minutos: 0,
+            eh_processo: false,
+            eh_pagamento: false,
+            created_at: hoje.toISOString()
+          });
+        }
+      }
+    });
+
+    // 2. PGR / PCMSO das Empresas
+    dpEmpresasConfig.forEach(cfg => {
+      const cli = clientes.find(c => c.id === cfg.empresa_id);
+      const cliNome = cli ? cli.nome : 'Empresa';
+
+      if (cfg.pgr_ppra_vencimento) {
+        const dtPGR = new Date(cfg.pgr_ppra_vencimento + 'T00:00:00');
+        if (dtPGR <= limite30Dias) {
+          const titPGR = `[SST] Renovar PGR / GRO - ${cliNome}`;
+          const jaExiste = tarefas.some(t => t.cliente_id === cfg.empresa_id && t.titulo === titPGR && t.competencia === compAtual)
+            || novasTarefas.some(t => t.cliente_id === cfg.empresa_id && t.titulo === titPGR && t.competencia === compAtual);
+          if (jaExiste) {
+            totalExistentes++;
+          } else {
+            totalCriadas++;
+            tarefasCriadasNomes.push(titPGR);
+            novasTarefas.push({
+              id: `t-sst-pgr-${cfg.id}-${Date.now()}`,
+              titulo: titPGR,
+              descricao: `Vigência do PGR/GRO da empresa ${cliNome} vence em ${cfg.pgr_ppra_vencimento}. Solicitar renovação ao parceiro de SST e enviar ao cliente.`,
+              tipo: 'Recorrente',
+              status: 'Pendente',
+              prioridade: dtPGR < hoje ? 'Urgente' : 'Alta',
+              cliente_id: cfg.empresa_id,
+              cliente_nome: cliNome,
+              responsavel: 'Ygor',
+              data_prazo_legal: cfg.pgr_ppra_vencimento,
+              data_prazo_meta: cfg.pgr_ppra_vencimento,
+              categoria: 'Pessoal',
+              competencia: compAtual,
+              tempo_gasto_minutos: 0,
+              eh_processo: false,
+              eh_pagamento: false,
+            created_at: hoje.toISOString()
+            });
+          }
+        }
+      }
+
+      if (cfg.pcmso_vencimento) {
+        const dtPCMSO = new Date(cfg.pcmso_vencimento + 'T00:00:00');
+        if (dtPCMSO <= limite30Dias) {
+          const titPCMSO = `[SST] Renovar PCMSO Médico - ${cliNome}`;
+          const jaExiste = tarefas.some(t => t.cliente_id === cfg.empresa_id && t.titulo === titPCMSO && t.competencia === compAtual)
+            || novasTarefas.some(t => t.cliente_id === cfg.empresa_id && t.titulo === titPCMSO && t.competencia === compAtual);
+          if (jaExiste) {
+            totalExistentes++;
+          } else {
+            totalCriadas++;
+            tarefasCriadasNomes.push(titPCMSO);
+            novasTarefas.push({
+              id: `t-sst-pcmso-${cfg.id}-${Date.now()}`,
+              titulo: titPCMSO,
+              descricao: `Vigência do PCMSO da empresa ${cliNome} vence em ${cfg.pcmso_vencimento}. Solicitar renovação médica e cronograma anual de exames.`,
+              tipo: 'Recorrente',
+              status: 'Pendente',
+              prioridade: dtPCMSO < hoje ? 'Urgente' : 'Alta',
+              cliente_id: cfg.empresa_id,
+              cliente_nome: cliNome,
+              responsavel: 'Ygor',
+              data_prazo_legal: cfg.pcmso_vencimento,
+              data_prazo_meta: cfg.pcmso_vencimento,
+              categoria: 'Pessoal',
+              competencia: compAtual,
+              tempo_gasto_minutos: 0,
+              eh_processo: false,
+              eh_pagamento: false,
+            created_at: hoje.toISOString()
+            });
+          }
+        }
+      }
+
+      // Dissídio do mês atual
+      const mesAtualNum = hoje.getMonth() + 1;
+      const anoAtual = hoje.getFullYear();
+      if (cfg.mes_data_base_dissidio === mesAtualNum && (cfg.ultimo_dissidio_conferido_ano || 0) < anoAtual) {
+        const titDissidio = `[DP/Sindicato] Conferir Dissídio Coletivo (${cfg.sindicato_nome}) - ${cliNome}`;
+        const jaExiste = tarefas.some(t => t.cliente_id === cfg.empresa_id && t.titulo === titDissidio && t.competencia === compAtual)
+          || novasTarefas.some(t => t.cliente_id === cfg.empresa_id && t.titulo === titDissidio && t.competencia === compAtual);
+        if (jaExiste) {
+          totalExistentes++;
+        } else {
+          totalCriadas++;
+          tarefasCriadasNomes.push(titDissidio);
+          const dia20Mes = `${anoAtual}-${String(mesAtualNum).padStart(2, '0')}-20`;
+          novasTarefas.push({
+            id: `t-dp-dissidio-${cfg.id}-${Date.now()}`,
+            titulo: titDissidio,
+            descricao: `Mês da Data-Base do sindicato ${cfg.sindicato_nome}. Verificar Convenção Coletiva de Trabalho (CCT) no Sistema Mediador/MTE, reajustes salariais, benefícios e retroativo.`,
+            tipo: 'Recorrente',
+            status: 'Pendente',
+            prioridade: 'Urgente',
+            cliente_id: cfg.empresa_id,
+            cliente_nome: cliNome,
+            responsavel: 'Ygor',
+            data_prazo_legal: dia20Mes,
+            data_prazo_meta: dia20Mes,
+            categoria: 'Pessoal',
+            competencia: compAtual,
+            tempo_gasto_minutos: 0,
+            eh_processo: false,
+            eh_pagamento: false,
+            created_at: hoje.toISOString()
+          });
+        }
+      }
+    });
+
+    // 3. Contratos de Experiência (45 dias e 90 dias)
+    dpFuncionarios.forEach(func => {
+      if (func.status === 'Desligado') return;
+      const cli = clientes.find(c => c.id === func.empresa_id);
+      const cliNome = cli ? cli.nome : 'Empresa';
+
+      if (func.vencimento_exp_1) {
+        const dtExp1 = new Date(func.vencimento_exp_1 + 'T00:00:00');
+        if (dtExp1 <= limite30Dias && dtExp1 >= new Date(hoje.getTime() - 15 * 24 * 60 * 60 * 1000)) {
+          const titExp1 = `[DP] Término 1º Período de Experiência (45 dias): ${func.nome_completo}`;
+          const jaExiste = tarefas.some(t => t.cliente_id === func.empresa_id && t.titulo === titExp1 && t.competencia === compAtual)
+            || novasTarefas.some(t => t.cliente_id === func.empresa_id && t.titulo === titExp1 && t.competencia === compAtual);
+          if (jaExiste) {
+            totalExistentes++;
+          } else {
+            totalCriadas++;
+            tarefasCriadasNomes.push(titExp1);
+            novasTarefas.push({
+              id: `t-dp-exp1-${func.id}-${Date.now()}`,
+              titulo: titExp1,
+              descricao: `1º Período de Experiência (45d) do funcionário ${func.nome_completo} (${cliNome}) vence em ${func.vencimento_exp_1}. Alinhar com o empregador se prorrogará para os 90 dias ou encerrará o contrato.`,
+              tipo: 'Recorrente',
+              status: 'Pendente',
+              prioridade: 'Alta',
+              cliente_id: func.empresa_id,
+              cliente_nome: cliNome,
+              responsavel: 'Ygor',
+              data_prazo_legal: func.vencimento_exp_1,
+              data_prazo_meta: func.vencimento_exp_1,
+              categoria: 'Pessoal',
+              competencia: compAtual,
+              tempo_gasto_minutos: 0,
+              eh_processo: false,
+              eh_pagamento: false,
+            created_at: hoje.toISOString()
+            });
+          }
+        }
+      }
+
+      if (func.vencimento_exp_2) {
+        const dtExp2 = new Date(func.vencimento_exp_2 + 'T00:00:00');
+        if (dtExp2 <= limite30Dias && dtExp2 >= new Date(hoje.getTime() - 15 * 24 * 60 * 60 * 1000)) {
+          const titExp2 = `[DP] Término 2º Período de Experiência (90 dias): ${func.nome_completo}`;
+          const jaExiste = tarefas.some(t => t.cliente_id === func.empresa_id && t.titulo === titExp2 && t.competencia === compAtual)
+            || novasTarefas.some(t => t.cliente_id === func.empresa_id && t.titulo === titExp2 && t.competencia === compAtual);
+          if (jaExiste) {
+            totalExistentes++;
+          } else {
+            totalCriadas++;
+            tarefasCriadasNomes.push(titExp2);
+            novasTarefas.push({
+              id: `t-dp-exp2-${func.id}-${Date.now()}`,
+              titulo: titExp2,
+              descricao: `2º Período de Experiência (90d) do funcionário ${func.nome_completo} (${cliNome}) vence em ${func.vencimento_exp_2}. Contrato passará a vigorar por prazo indeterminado se não houver rescisão formal antes desta data.`,
+              tipo: 'Recorrente',
+              status: 'Pendente',
+              prioridade: 'Urgente',
+              cliente_id: func.empresa_id,
+              cliente_nome: cliNome,
+              responsavel: 'Ygor',
+              data_prazo_legal: func.vencimento_exp_2,
+              data_prazo_meta: func.vencimento_exp_2,
+              categoria: 'Pessoal',
+              competencia: compAtual,
+              tempo_gasto_minutos: 0,
+              eh_processo: false,
+              eh_pagamento: false,
+            created_at: hoje.toISOString()
+            });
+          }
+        }
+      }
+    });
+
+    if (novasTarefas.length > 0) {
+      const tarefasAtualizadas = [...tarefas, ...novasTarefas];
+      setTarefas(tarefasAtualizadas);
+      try {
+        localStorage.setItem('gestup_v2_tarefas', JSON.stringify(tarefasAtualizadas));
+      } catch {}
+    }
+
+    return {
+      criadas: totalCriadas,
+      existentes: totalExistentes,
+      tarefasCriadas: tarefasCriadasNomes
+    };
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -4121,7 +4573,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ajustarSaldoConta,
         addContaBancaria,
         redefinirFinanceiro,
-        redefinirDadosPadrao
+        redefinirDadosPadrao,
+        userRole,
+        setUserRole,
+        dpEmpresasConfig,
+        dpFuncionarios,
+        dpControleVencimentos,
+        dpDiarioBordo,
+        salvarDPEmpresaConfig,
+        addDPFuncionario,
+        updateDPFuncionario,
+        deleteDPFuncionario,
+        addDPVencimento,
+        updateDPVencimento,
+        deleteDPVencimento,
+        addDPOcorrencia,
+        updateDPOcorrencia,
+        deleteDPOcorrencia,
+        sincronizarDPComTarefasGestup
       }}
     >
       {children}

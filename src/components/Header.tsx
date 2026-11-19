@@ -25,7 +25,9 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
     dispararResumoMatinalEquipe,
     sidebarCollapsed,
     toggleSidebar,
-    toggleMobileMenu
+    toggleMobileMenu,
+    userRole,
+    setUserRole
   } = useApp();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -65,6 +67,8 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
         return { title: 'Central de Automações WhatsApp', desc: 'Réguas de cobrança automática, lembretes de prazos e logs' };
       case 'portal-cliente':
         return { title: 'Portal do Cliente fin.up', desc: 'Espaço seguro para entrega de guias e recebimento de documentos' };
+      case 'dp-sst':
+        return { title: 'Central de Gestão de DP, SST & Prontuário Trabalhista', desc: 'Cockpit operacional de alertas, controle de PGR/PCMSO, Diário de Bordo e Dossiê Trabalhista' };
       default:
         return { title: 'GestUp', desc: 'Consultoria Financeira e Tributária' };
     }
@@ -126,6 +130,49 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
 
         {/* Ações & Indicadores Inteligentes */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
+          {/* Seletor Rápido de Perfil / RBAC (Admin Sócio vs. Auxiliar DP vs. Fiscal) */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setUserRole('admin_socio')}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                userRole === 'admin_socio'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Modo Admin Sócio: Acesso irrestrito a honorários, MRR e pró-labore"
+            >
+              <span>👑</span>
+              <span className="hidden sm:inline">Sócio/Admin</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setUserRole('operacional_dp')}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                userRole === 'operacional_dp'
+                  ? 'bg-brand-blue text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Modo Auxiliar DP: Focado em DP & SST, oculta dados financeiros e pró-labore"
+            >
+              <span>👷</span>
+              <span className="hidden sm:inline">Auxiliar DP</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setUserRole('fiscal_contabil')}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                userRole === 'fiscal_contabil'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Modo Fiscal / Contábil: Focado em declarações e rotinas fiscais"
+            >
+              <span>📊</span>
+              <span className="hidden sm:inline">Fiscal</span>
+            </button>
+          </div>
+
           {/* Alerta de Risco Fiscal */}
           {tarefasAtrasadas > 0 && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] sm:text-xs font-medium">

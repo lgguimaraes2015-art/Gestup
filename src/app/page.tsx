@@ -16,6 +16,7 @@ import { DashboardBIView } from '@/components/views/DashboardBIView';
 import { ConfiguracoesView } from '@/components/views/ConfiguracoesView';
 import { ColaboradoresView } from '@/components/views/ColaboradoresView';
 import { RadarFiscalView } from '@/components/views/RadarFiscalView';
+import { DPSSTView } from '@/components/views/DPSSTView';
 
 export default function Home() {
   const { activeTab } = useApp();
@@ -45,6 +46,8 @@ export default function Home() {
               setModalOpen={setTarefaModalOpen}
             />
           )}
+
+          {activeTab === 'dp-sst' && <DPSSTView />}
 
           {activeTab === 'clientes' && <ClientesView />}
 

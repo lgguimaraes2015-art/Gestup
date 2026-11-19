@@ -725,3 +725,149 @@ export interface SolicitacaoPortalCliente {
   updated_at?: string;
 }
 
+// ==================== CONTROLE DE ACESSO & RBAC ====================
+export type UserRole = 'admin_socio' | 'operacional_dp' | 'fiscal_contabil';
+
+// ==================== DEPARTAMENTO PESSOAL, SST & DIÁRIO DE BORDO ====================
+
+export interface DPEmpresaConfig {
+  id: string;
+  empresa_id: string; // FK vinculada ao Cliente.id do GestUp
+  sindicato_nome: string;
+  mes_data_base_dissidio: number; // Mês 1 a 12
+  ultimo_dissidio_conferido_ano: number; // Ex: 2026
+  pgr_ppra_emissao?: string;
+  pgr_ppra_vencimento?: string;
+  pgr_ppra_anexo_url?: string;
+  pgr_ppra_anexo_nome?: string;
+  pcmso_emissao?: string;
+  pcmso_vencimento?: string;
+  pcmso_anexo_url?: string;
+  pcmso_anexo_nome?: string;
+  drive_folder_empresa_url?: string;
+  updated_at?: string;
+}
+
+export type DPTipoContrato = 'CLT' | 'Experiencia' | 'Estagio' | 'Intermitente' | 'Pro-Labore';
+
+export type DPStatusFuncionario =
+  | 'Ativo'
+  | 'Ferias'
+  | 'Afastado_INSS'
+  | 'Licenca_Maternidade'
+  | 'Aviso_Previo'
+  | 'Desligado';
+
+export interface DPFuncionario {
+  id: string;
+  empresa_id: string; // FK do Cliente
+  nome_completo: string;
+  cpf: string;
+  rg?: string;
+  pis_nis?: string;
+  ctps?: string;
+  data_nascimento?: string;
+  telefone_whatsapp?: string;
+  email?: string;
+  cargo: string;
+  cbo?: string;
+  departamento?: string;
+  salario_base: number;
+  tipo_contrato: DPTipoContrato;
+  jornada_trabalho: string;
+  data_admissao: string;
+  vencimento_exp_1?: string; // data_admissao + 44 dias
+  vencimento_exp_2?: string; // data_admissao + 89 dias
+  status: DPStatusFuncionario;
+  data_desligamento?: string;
+  drive_folder_funcionario_url?: string;
+  ficha_registro_pdf_url?: string;
+  ficha_registro_pdf_nome?: string;
+  created_at?: string;
+}
+
+export type DPCategoriaVencimento =
+  | 'ASO_Admissional'
+  | 'ASO_Periodico'
+  | 'ASO_Retorno'
+  | 'ASO_Mudanca_Funcao'
+  | 'ASO_Demissional'
+  | 'Ficha_EPI'
+  | 'Ferias'
+  | 'Decimo_Terceiro_1'
+  | 'Decimo_Terceiro_2'
+  | 'Aviso_Previo';
+
+export type DPStatusVencimento = 'Em_Dia' | 'Alerta_Proximo' | 'Vencido' | 'Concluido_Historico';
+
+export interface DPControleVencimento {
+  id: string;
+  funcionario_id: string;
+  empresa_id: string;
+  categoria: DPCategoriaVencimento;
+  titulo_item: string;
+  numero_ca_epi?: string;
+  periodo_aquisitivo_inicio?: string;
+  periodo_aquisitivo_fim?: string;
+  data_realizacao_entrega?: string;
+  data_vencimento_limite: string;
+  status: DPStatusVencimento;
+  anexo_comprovante_url?: string;
+  anexo_comprovante_nome?: string;
+  observacoes?: string;
+}
+
+export type DPTipoOcorrencia =
+  | 'Falta_Injustificada'
+  | 'Falta_Justificada_Atestado'
+  | 'Atraso'
+  | 'Saida_Antecipada'
+  | 'Advertencia_Verbal'
+  | 'Advertencia_Escrita'
+  | 'Suspensao'
+  | 'Hora_Extra_Autorizada'
+  | 'Elogio_Destaque'
+  | 'Outros';
+
+export type DPCanalAutorizacao =
+  | 'Grupo_WhatsApp'
+  | 'Mensagem_Privada'
+  | 'Email'
+  | 'Presencial'
+  | 'Atestado_Medico'
+  | 'Nao_Aplicavel';
+
+export type DPImpactoFolha =
+  | 'Sem_Desconto_Abonado'
+  | 'Descontar_Horas_Dias'
+  | 'Descontar_DSR_e_Dia'
+  | 'Banco_de_Horas';
+
+export interface DPAnexoOcorrencia {
+  id: string;
+  nome_arquivo: string;
+  url: string; // Base64 ou Link
+  tipo_mime: string; // 'image/png' | 'image/jpeg' | 'application/pdf' | 'audio/mp3' | 'audio/ogg' | 'audio/mpeg'
+  tamanho: string;
+  data_upload: string;
+}
+
+export interface DPDiarioBordo {
+  id: string;
+  funcionario_id: string;
+  empresa_id: string;
+  data_ocorrencia: string;
+  hora_ocorrencia?: string;
+  tipo_ocorrencia: DPTipoOcorrencia;
+  titulo_resumo: string;
+  descricao_detalhada: string;
+  minutos_atraso_ou_dias_falta?: string;
+  abonar_ocorrencia: boolean;
+  aprovado_por_nome?: string;
+  canal_autorizacao: DPCanalAutorizacao;
+  impacto_folha: DPImpactoFolha;
+  anexos: DPAnexoOcorrencia[];
+  registrado_por_usuario: string;
+  created_at: string;
+}
+

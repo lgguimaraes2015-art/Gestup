@@ -15,7 +15,11 @@ import {
   HistoricoAjusteSaldo,
   ModeloMensagemTarefa,
   DocumentoPortalCliente,
-  SolicitacaoPortalCliente
+  SolicitacaoPortalCliente,
+  DPEmpresaConfig,
+  DPFuncionario,
+  DPControleVencimento,
+  DPDiarioBordo
 } from '@/types';
 import { ehRegistroSamira } from './dateUtils';
 
@@ -4723,5 +4727,337 @@ export const initialSolicitacoesPortal: SolicitacaoPortalCliente[] = [
     status: 'Pendente',
     responsavel: 'Luiz Gustavo',
     created_at: '2026-11-01'
+  }
+];
+
+// ==================== DEPARTAMENTO PESSOAL, SST & PRONTUÁRIO TRABALHISTA ====================
+
+export const initialDPEmpresasConfig: DPEmpresaConfig[] = [
+  {
+    id: 'dp-cfg-1',
+    empresa_id: '6a722218cec951fb77d80bb6', // THE BLACK BURGUER
+    sindicato_nome: 'SINTHORESSOR - Sindicato dos Trab. em Hotéis, Bares e Restaurantes',
+    mes_data_base_dissidio: 11, // Novembro (Mês atual - Alerta Ativo!)
+    ultimo_dissidio_conferido_ano: 2025,
+    pgr_ppra_emissao: '2026-02-10',
+    pgr_ppra_vencimento: '2027-02-10',
+    pgr_ppra_anexo_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+    pgr_ppra_anexo_nome: 'PGR_2026_TheBlackBurguer_Assinado.pdf',
+    pcmso_emissao: '2026-02-10',
+    pcmso_vencimento: '2026-12-15', // Vencendo nos próximos 30 dias!
+    pcmso_anexo_url: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800',
+    pcmso_anexo_nome: 'PCMSO_2026_ClinicaOcupacional.pdf',
+    drive_folder_empresa_url: 'https://drive.google.com/drive/folders/the_black_burguer_dp_oficial',
+    updated_at: '2026-11-01'
+  },
+  {
+    id: 'dp-cfg-2',
+    empresa_id: '6a7ddd87bfda5c46480a33f4', // Adega do Chris
+    sindicato_nome: 'SECOM - Sindicato dos Empregados no Comércio Varejista',
+    mes_data_base_dissidio: 10,
+    ultimo_dissidio_conferido_ano: 2026,
+    pgr_ppra_emissao: '2025-11-28',
+    pgr_ppra_vencimento: '2026-11-28', // Vencendo em menos de 15 dias!
+    pgr_ppra_anexo_url: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?w=800',
+    pgr_ppra_anexo_nome: 'PGR_Adega_do_Chris_Vigente.pdf',
+    pcmso_emissao: '2025-11-28',
+    pcmso_vencimento: '2026-11-28', // Vencendo em menos de 15 dias!
+    pcmso_anexo_url: 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800',
+    pcmso_anexo_nome: 'PCMSO_Adega_do_Chris_Vigente.pdf',
+    drive_folder_empresa_url: 'https://drive.google.com/drive/folders/adega_chris_dp_sst',
+    updated_at: '2026-10-20'
+  },
+  {
+    id: 'dp-cfg-3',
+    empresa_id: '6a72b5ea245c0f1bc0a404a8', // Lucas Bonzanino
+    sindicato_nome: 'SINCOVAGA - Sindicato do Comércio Varejista',
+    mes_data_base_dissidio: 9,
+    ultimo_dissidio_conferido_ano: 2026,
+    pgr_ppra_emissao: '2026-06-15',
+    pgr_ppra_vencimento: '2027-06-15',
+    pcmso_emissao: '2026-06-15',
+    pcmso_vencimento: '2027-06-15',
+    drive_folder_empresa_url: 'https://drive.google.com/drive/folders/lucas_bonzanino_dp',
+    updated_at: '2026-09-10'
+  }
+];
+
+export const initialDPFuncionarios: DPFuncionario[] = [
+  {
+    id: 'func-1',
+    empresa_id: '6a722218cec951fb77d80bb6', // THE BLACK BURGUER
+    nome_completo: 'Marcos Vinicius de Souza',
+    cpf: '389.442.108-44',
+    rg: '48.219.004-1 SSP/SP',
+    pis_nis: '128.44192.83-9',
+    ctps: '48291 Série 0012-SP',
+    data_nascimento: '1996-04-18',
+    telefone_whatsapp: '(19) 98841-2091',
+    email: 'marcos.chapa@gmail.com',
+    cargo: 'Chapeiro Líder',
+    cbo: '5135-05',
+    departamento: 'Cozinha e Produção',
+    salario_base: 2250.00,
+    tipo_contrato: 'CLT',
+    jornada_trabalho: '44h semanais / Escala 6x1 (16:00 às 00:20)',
+    data_admissao: '2025-05-10',
+    vencimento_exp_1: '2025-06-23',
+    vencimento_exp_2: '2025-08-07',
+    status: 'Ativo',
+    drive_folder_funcionario_url: 'https://drive.google.com/drive/folders/marcos_vinicius_souza',
+    ficha_registro_pdf_url: 'https://images.unsplash.com/photo-1568667256549-094345857637?w=800',
+    ficha_registro_pdf_nome: 'Ficha_Registro_Assinada_Marcos_Vinicius.pdf',
+    created_at: '2025-05-10'
+  },
+  {
+    id: 'func-2',
+    empresa_id: '6a722218cec951fb77d80bb6', // THE BLACK BURGUER
+    nome_completo: 'Larissa Menezes Duarte',
+    cpf: '412.871.908-12',
+    rg: '52.991.042-8 SSP/SP',
+    pis_nis: '139.55102.11-2',
+    ctps: '59123 Série 0015-SP',
+    data_nascimento: '2001-09-12',
+    telefone_whatsapp: '(19) 99124-7788',
+    email: 'larissa.duarte99@gmail.com',
+    cargo: 'Atendente de Balcão e Caixa',
+    cbo: '4211-25',
+    departamento: 'Atendimento & Caixa',
+    salario_base: 1780.00,
+    tipo_contrato: 'Experiencia',
+    jornada_trabalho: '44h semanais / Escala 6x1 (17:00 às 01:20)',
+    data_admissao: '2026-10-06',
+    vencimento_exp_1: '2026-11-19', // Vencendo AMANHÃ! (Alerta Crítico de 45 dias)
+    vencimento_exp_2: '2027-01-03', // 90 dias
+    status: 'Ativo',
+    drive_folder_funcionario_url: 'https://drive.google.com/drive/folders/larissa_menezes',
+    ficha_registro_pdf_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+    ficha_registro_pdf_nome: 'Ficha_Cadastral_Larissa_Menezes.pdf',
+    created_at: '2026-10-06'
+  },
+  {
+    id: 'func-3',
+    empresa_id: '6a7ddd87bfda5c46480a33f4', // Adega do Chris
+    nome_completo: 'Carlos Eduardo Ribeiro',
+    cpf: '329.110.878-31',
+    rg: '39.812.901-X SSP/SP',
+    pis_nis: '118.99214.50-4',
+    ctps: '38190 Série 0008-SP',
+    data_nascimento: '1992-12-05',
+    telefone_whatsapp: '(19) 98711-4560',
+    email: 'carlos.ribeiro.adega@outlook.com',
+    cargo: 'Repositor & Operador de Caixa',
+    cbo: '4141-05',
+    departamento: 'Operações e Logística',
+    salario_base: 1850.00,
+    tipo_contrato: 'CLT',
+    jornada_trabalho: '44h semanais / Segunda a Sábado',
+    data_admissao: '2024-03-01',
+    vencimento_exp_1: '2024-04-14',
+    vencimento_exp_2: '2024-05-29',
+    status: 'Ativo',
+    drive_folder_funcionario_url: 'https://drive.google.com/drive/folders/carlos_eduardo_adega',
+    ficha_registro_pdf_url: 'https://images.unsplash.com/photo-1568667256549-094345857637?w=800',
+    ficha_registro_pdf_nome: 'Ficha_Registro_Carlos_Eduardo.pdf',
+    created_at: '2024-03-01'
+  },
+  {
+    id: 'func-4',
+    empresa_id: '6a72b5ea245c0f1bc0a404a8', // Lucas Bonzanino
+    nome_completo: 'Juliana Castro Alcantara',
+    cpf: '455.192.838-90',
+    rg: '50.119.204-5 SSP/SP',
+    pis_nis: '141.22901.44-8',
+    cargo: 'Assistente Administrativa',
+    cbo: '4110-10',
+    departamento: 'Administrativo',
+    salario_base: 2100.00,
+    tipo_contrato: 'CLT',
+    jornada_trabalho: '44h semanais / Segunda a Sexta (08h às 18h)',
+    data_admissao: '2025-01-15',
+    status: 'Ferias',
+    telefone_whatsapp: '(19) 99311-2244',
+    created_at: '2025-01-15'
+  }
+];
+
+export const initialDPControleVencimentos: DPControleVencimento[] = [
+  {
+    id: 'venc-1',
+    funcionario_id: 'func-1', // Marcos Vinicius
+    empresa_id: '6a722218cec951fb77d80bb6', // THE BLACK BURGUER
+    categoria: 'ASO_Periodico',
+    titulo_item: 'ASO Periódico Anual (Cozinha & Chapa)',
+    data_realizacao_entrega: '2025-11-25',
+    data_vencimento_limite: '2026-11-25', // Vencendo em 7 dias!
+    status: 'Alerta_Proximo',
+    anexo_comprovante_url: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800',
+    anexo_comprovante_nome: 'ASO_2025_Marcos_Vinicius_Assinado.pdf',
+    observacoes: 'Exame clínico + Audiometria ocupacional anual.'
+  },
+  {
+    id: 'venc-2',
+    funcionario_id: 'func-1', // Marcos Vinicius
+    empresa_id: '6a722218cec951fb77d80bb6',
+    categoria: 'Ficha_EPI',
+    titulo_item: 'Bota Antiderrapante c/ Biqueira e Luva Térmica p/ Forno',
+    numero_ca_epi: 'CA 38.442 / CA 41.205',
+    data_realizacao_entrega: '2026-05-30',
+    data_vencimento_limite: '2026-11-30', // Substituição semestral do calçado
+    status: 'Alerta_Proximo',
+    anexo_comprovante_url: 'https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=800',
+    anexo_comprovante_nome: 'Ficha_EPI_Semestre_1_Marcos.pdf',
+    observacoes: 'Troca periódica obrigatória da bota antiderrapante para cozinha.'
+  },
+  {
+    id: 'venc-3',
+    funcionario_id: 'func-1', // Marcos Vinicius
+    empresa_id: '6a722218cec951fb77d80bb6',
+    categoria: 'Ferias',
+    titulo_item: 'Férias Período Aquisitivo 2025/2026',
+    periodo_aquisitivo_inicio: '2025-05-10',
+    periodo_aquisitivo_fim: '2026-05-09',
+    data_vencimento_limite: '2027-04-09', // Limite concessivo
+    status: 'Em_Dia',
+    observacoes: 'Programar gozo de férias com antecedência de 30 dias.'
+  },
+  {
+    id: 'venc-4',
+    funcionario_id: 'func-2', // Larissa Menezes
+    empresa_id: '6a722218cec951fb77d80bb6',
+    categoria: 'ASO_Admissional',
+    titulo_item: 'ASO Admissional - Atendimento',
+    data_realizacao_entrega: '2026-10-04',
+    data_vencimento_limite: '2027-10-04',
+    status: 'Em_Dia',
+    anexo_comprovante_url: 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800',
+    anexo_comprovante_nome: 'ASO_Admissional_Larissa_Apto.pdf',
+    observacoes: 'Apta para a função de Atendente sem restrições.'
+  },
+  {
+    id: 'venc-5',
+    funcionario_id: 'func-3', // Carlos Eduardo
+    empresa_id: '6a7ddd87bfda5c46480a33f4', // Adega do Chris
+    categoria: 'ASO_Periodico',
+    titulo_item: 'ASO Periódico Anual - Operador de Loja',
+    data_realizacao_entrega: '2025-11-20',
+    data_vencimento_limite: '2026-11-20', // Vencendo em 2 dias!
+    status: 'Alerta_Proximo',
+    anexo_comprovante_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+    anexo_comprovante_nome: 'ASO_Periodico_Carlos_Adega.pdf',
+    observacoes: 'Agendar clínica conveniada urgente.'
+  },
+  {
+    id: 'venc-6',
+    funcionario_id: 'func-3', // Carlos Eduardo
+    empresa_id: '6a7ddd87bfda5c46480a33f4',
+    categoria: 'Ferias',
+    titulo_item: 'Férias Vencidas - Período Aquisitivo 2024/2025',
+    periodo_aquisitivo_inicio: '2024-03-01',
+    periodo_aquisitivo_fim: '2025-02-28',
+    data_vencimento_limite: '2026-01-28', // Passou do limite concessivo!
+    status: 'Vencido',
+    observacoes: 'Risco trabalhista de pagamento em dobro. Conceder imediatamente.'
+  }
+];
+
+export const initialDPDiarioBordo: DPDiarioBordo[] = [
+  {
+    id: 'db-1',
+    funcionario_id: 'func-1', // Marcos Vinicius
+    empresa_id: '6a722218cec951fb77d80bb6', // THE BLACK BURGUER
+    data_ocorrencia: '2026-11-12',
+    hora_ocorrencia: '15:30',
+    tipo_ocorrencia: 'Falta_Justificada_Atestado',
+    titulo_resumo: 'Atestado Médico - Amigdalite Aguda (CID J03.9)',
+    descricao_detalhada: 'Colaborador apresentou atestado médico válido de 2 dias emitido pelo Dr. Roberto Souza (CRM 149201) da UPA Central. Enviou foto nítida do documento pelo WhatsApp ao gerente.',
+    minutos_atraso_ou_dias_falta: '2 dias',
+    abonar_ocorrencia: true,
+    aprovado_por_nome: 'Rodrigo (Gerente Geral)',
+    canal_autorizacao: 'Atestado_Medico',
+    impacto_folha: 'Sem_Desconto_Abonado',
+    anexos: [
+      {
+        id: 'anx-1',
+        nome_arquivo: 'Atestado_Medico_Marcos_12Nov.pdf',
+        url: 'https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=800',
+        tipo_mime: 'application/pdf',
+        tamanho: '420 KB',
+        data_upload: '2026-11-12'
+      }
+    ],
+    registrado_por_usuario: 'Ygor (DP)',
+    created_at: '2026-11-12 16:10'
+  },
+  {
+    id: 'db-2',
+    funcionario_id: 'func-2', // Larissa Menezes
+    empresa_id: '6a722218cec951fb77d80bb6', // THE BLACK BURGUER
+    data_ocorrencia: '2026-11-10',
+    hora_ocorrencia: '16:45',
+    tipo_ocorrencia: 'Atraso',
+    titulo_resumo: 'Atraso de 45 minutos no início da escala',
+    descricao_detalhada: 'Colaboradora avisou com 30min de antecedência no grupo de WhatsApp da loja que o ônibus da linha 310 quebrou na rodovia. O supervisor Jaksson autorizou o abono do atraso sem desconto.',
+    minutos_atraso_ou_dias_falta: '45 minutos',
+    abonar_ocorrencia: true,
+    aprovado_por_nome: 'Jaksson (Supervisor de Turno)',
+    canal_autorizacao: 'Grupo_WhatsApp',
+    impacto_folha: 'Sem_Desconto_Abonado',
+    anexos: [
+      {
+        id: 'anx-2',
+        nome_arquivo: 'Print_WhatsApp_Aviso_Onibus_Jaksson.png',
+        url: 'https://images.unsplash.com/photo-1611746872915-64382b5c76da?w=800',
+        tipo_mime: 'image/png',
+        tamanho: '850 KB',
+        data_upload: '2026-11-10'
+      }
+    ],
+    registrado_por_usuario: 'Ygor (DP)',
+    created_at: '2026-11-10 17:30'
+  },
+  {
+    id: 'db-3',
+    funcionario_id: 'func-3', // Carlos Eduardo
+    empresa_id: '6a7ddd87bfda5c46480a33f4', // Adega do Chris
+    data_ocorrencia: '2026-11-04',
+    hora_ocorrencia: '09:00',
+    tipo_ocorrencia: 'Advertencia_Escrita',
+    titulo_resumo: 'Falta injustificada em sábado de alto movimento',
+    descricao_detalhada: 'Colaborador não compareceu ao trabalho no sábado sem prévio aviso e sem apresentar comprovante médico ou legal posterior. Aplicada advertência formal escrita assinada com duas testemunhas.',
+    minutos_atraso_ou_dias_falta: '1 dia de falta + DSR',
+    abonar_ocorrencia: false,
+    canal_autorizacao: 'Presencial',
+    impacto_folha: 'Descontar_DSR_e_Dia',
+    anexos: [
+      {
+        id: 'anx-3',
+        nome_arquivo: 'Advertencia_Escrita_Assinada_Carlos.pdf',
+        url: 'https://images.unsplash.com/photo-1568667256549-094345857637?w=800',
+        tipo_mime: 'application/pdf',
+        tamanho: '1.1 MB',
+        data_upload: '2026-11-04'
+      }
+    ],
+    registrado_por_usuario: 'Ygor (DP)',
+    created_at: '2026-11-04 11:20'
+  },
+  {
+    id: 'db-4',
+    funcionario_id: 'func-1', // Marcos Vinicius
+    empresa_id: '6a722218cec951fb77d80bb6', // THE BLACK BURGUER
+    data_ocorrencia: '2026-10-28',
+    hora_ocorrencia: '00:30',
+    tipo_ocorrencia: 'Hora_Extra_Autorizada',
+    titulo_resumo: 'Hora extra de 2 horas em fechamento de evento privado',
+    descricao_detalhada: 'Permanência autorizada pelo proprietário para atendimento do festival de hambúrguer artesanal. Lançado para pagamento como HE 100% ou banco.',
+    minutos_atraso_ou_dias_falta: '120 minutos (2 horas)',
+    abonar_ocorrencia: true,
+    aprovado_por_nome: 'Rodrigo',
+    canal_autorizacao: 'Mensagem_Privada',
+    impacto_folha: 'Banco_de_Horas',
+    anexos: [],
+    registrado_por_usuario: 'Ygor (DP)',
+    created_at: '2026-10-28 01:15'
   }
 ];

@@ -75,7 +75,8 @@ export function ClientesView() {
     gerarTarefasEmpresaAteJaneiro2027,
     adicionarDocumentoLegalCliente,
     removerDocumentoLegalCliente,
-    atualizarAcessoPortalCliente
+    atualizarAcessoPortalCliente,
+    userRole
   } = useApp();
 
   const [busca, setBusca] = useState('');
@@ -419,44 +420,70 @@ export function ClientesView() {
       )}
 
       {/* 1. CARDS DE MÉTRICAS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">MRR da Carteira Ativa</p>
-            <p className="text-2xl font-bold text-brand-green mt-1">
-              R$ {totalHonorarios.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </p>
-            <p className="text-[11px] text-emerald-600 mt-1">Receita mensal recorrente</p>
+      {userRole !== 'operacional_dp' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">MRR da Carteira Ativa</p>
+              <p className="text-2xl font-bold text-brand-green mt-1">
+                R$ {totalHonorarios.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+              <p className="text-[11px] text-emerald-600 mt-1">Receita mensal recorrente</p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 text-brand-green flex items-center justify-center">
+              <DollarSign className="w-5 h-5" />
+            </div>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-emerald-50 text-brand-green flex items-center justify-center">
-            <DollarSign className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Clientes Ativos</p>
-            <p className="text-2xl font-bold text-brand-blue mt-1">{clientesAtivos}</p>
-            <p className="text-[11px] text-slate-500 mt-1">{clientesInativos} inativos / suspensos</p>
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Clientes Ativos</p>
+              <p className="text-2xl font-bold text-brand-blue mt-1">{clientesAtivos}</p>
+              <p className="text-[11px] text-slate-500 mt-1">{clientesInativos} inativos / suspensos</p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-blue-50 text-brand-blue flex items-center justify-center">
+              <Building className="w-5 h-5" />
+            </div>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-blue-50 text-brand-blue flex items-center justify-center">
-            <Building className="w-5 h-5" />
-          </div>
-        </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ticket Médio Mensal</p>
-            <p className="text-2xl font-bold text-purple-700 mt-1">
-              R$ {clientesAtivos > 0 ? (totalHonorarios / clientesAtivos).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'}
-            </p>
-            <p className="text-[11px] text-purple-600 mt-1">Média por empresa atendida</p>
-          </div>
-          <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-            <Users className="w-5 h-5" />
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ticket Médio Mensal</p>
+              <p className="text-2xl font-bold text-purple-700 mt-1">
+                R$ {clientesAtivos > 0 ? (totalHonorarios / clientesAtivos).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'}
+              </p>
+              <p className="text-[11px] text-purple-600 mt-1">Média por empresa atendida</p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+              <Users className="w-5 h-5" />
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Empresas Ativas</p>
+              <p className="text-2xl font-bold text-brand-blue mt-1">{clientesAtivos}</p>
+              <p className="text-[11px] text-slate-500 mt-1">Em atendimento no escritório</p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-blue-50 text-brand-blue flex items-center justify-center">
+              <Building className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total de Contratos</p>
+              <p className="text-2xl font-bold text-purple-700 mt-1">{clientes.length}</p>
+              <p className="text-[11px] text-purple-600 mt-1">{clientesInativos} inativos / baixados</p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+              <Users className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. BARRA DE BUSCA, FILTROS & AÇÕES */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-subtle flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -553,7 +580,9 @@ export function ClientesView() {
                 <th className="px-4 py-3.5">Tarefas da Empresa</th>
                 <th className="px-4 py-3.5">Documentos Legais</th>
                 <th className="px-4 py-3.5">Portal do Cliente</th>
-                <th className="px-4 py-3.5">Honorário & Venc.</th>
+                {userRole !== 'operacional_dp' && (
+                  <th className="px-4 py-3.5">Honorário & Venc.</th>
+                )}
                 <th className="px-4 py-3.5">Status</th>
                 <th className="px-5 py-3.5 text-right">Ações & Acesso</th>
               </tr>
@@ -627,12 +656,14 @@ export function ClientesView() {
                     </td>
 
                     {/* Honorário & Vencimento */}
-                    <td className="px-4 py-4">
-                      <p className="font-bold text-slate-900">
-                        R$ {(cli.honorario_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-[11px] text-slate-500">Todo dia {cli.dia_vencimento || 15}</p>
-                    </td>
+                    {userRole !== 'operacional_dp' && (
+                      <td className="px-4 py-4">
+                        <p className="font-bold text-slate-900">
+                          R$ {(cli.honorario_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[11px] text-slate-500">Todo dia {cli.dia_vencimento || 15}</p>
+                      </td>
+                    )}
 
                     {/* Status Ativo/Inativo */}
                     <td className="px-4 py-4">
@@ -868,15 +899,17 @@ export function ClientesView() {
                   </div>
 
                   <div className="grid grid-cols-4 gap-3">
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Honorário Mensal (R$)</label>
-                      <input
-                        type="number"
-                        value={honorario}
-                        onChange={e => setHonorario(Number(e.target.value))}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold text-brand-green"
-                      />
-                    </div>
+                    {userRole !== 'operacional_dp' && (
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">Honorário Mensal (R$)</label>
+                        <input
+                          type="number"
+                          value={honorario}
+                          onChange={e => setHonorario(Number(e.target.value))}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold text-brand-green"
+                        />
+                      </div>
+                    )}
 
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Dia Vencimento</label>

@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 export function DashboardBIView() {
-  const { tarefas, clientes, colaboradores, setActiveTab } = useApp();
+  const { tarefas, clientes, colaboradores, setActiveTab, userRole, dpFuncionarios, dpControleVencimentos } = useApp();
 
   const [competenciaAtiva, setCompetenciaAtiva] = useState(() => obterCompetenciaAtual());
   const [responsavelFiltro, setResponsavelFiltro] = useState('todos');
@@ -121,22 +121,40 @@ export function DashboardBIView() {
 
       {/* 2. KPI SCORECARDS (POWER BI CARDS) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card MRR */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle hover:shadow-card transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">MRR da Carteira</span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-brand-green flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
+        {/* Card 1: MRR (ou Total de Funcionários quando Operacional DP) */}
+        {userRole !== 'operacional_dp' ? (
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle hover:shadow-card transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">MRR da Carteira</span>
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-brand-green flex items-center justify-center">
+                <DollarSign className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-2xl font-black text-slate-900 mt-2">
+              R$ {mrrTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </p>
+            <div className="flex items-center gap-1.5 mt-2 text-xs font-semibold text-emerald-600">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>100% dos {clientesAtivos.length} clientes ativos</span>
             </div>
           </div>
-          <p className="text-2xl font-black text-slate-900 mt-2">
-            R$ {mrrTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <div className="flex items-center gap-1.5 mt-2 text-xs font-semibold text-emerald-600">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>100% dos 17 clientes ativos</span>
+        ) : (
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle hover:shadow-card transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Colaboradores Ativos</span>
+              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-2xl font-black text-slate-900 mt-2">
+              {dpFuncionarios.filter(f => f.status === 'Ativo').length}
+            </p>
+            <div className="flex items-center gap-1.5 mt-2 text-xs font-semibold text-purple-600">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Monitorados no DP & SST</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Card Taxa de Eficiência */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle hover:shadow-card transition-all">
@@ -169,21 +187,38 @@ export function DashboardBIView() {
           </p>
         </div>
 
-        {/* Card Partilha dos Sócios */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle hover:shadow-card transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Pró-labore por Sócio</span>
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-              <Award className="w-4 h-4" />
+        {/* Card 4: Partilha dos Sócios (ou Vencimentos DP quando Operacional DP) */}
+        {userRole !== 'operacional_dp' ? (
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle hover:shadow-card transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Pró-labore por Sócio</span>
+              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+                <Award className="w-4 h-4" />
+              </div>
             </div>
+            <p className="text-2xl font-black text-brand-blue mt-2">
+              R$ {participacaoSocio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-2">
+              35% Guilherme | 35% Ygor | 30% Finup
+            </p>
           </div>
-          <p className="text-2xl font-black text-brand-blue mt-2">
-            R$ {participacaoSocio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <p className="text-[11px] text-slate-500 mt-2">
-            35% Guilherme | 35% Ygor | 30% Finup
-          </p>
-        </div>
+        ) : (
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-subtle hover:shadow-card transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Vencimentos DP & SST</span>
+              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-2xl font-black text-slate-900 mt-2">
+              {dpControleVencimentos.filter(v => v.status !== 'Concluido_Historico').length}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-2">
+              ASOs, EPIs e Férias em monitoramento
+            </p>
+          </div>
+        )}
       </div>
 
       {/* 3. GRÁFICOS VISUAIS ESTRATÉGICOS (POWER BI WIDGETS) */}

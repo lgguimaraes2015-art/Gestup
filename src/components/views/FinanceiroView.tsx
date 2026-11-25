@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
+import { obterCompetenciaAtual } from '@/lib/dateUtils';
 import { HonorarioItem, ContaPagar, ReceitaNaoRecorrente, ContaBancaria, HistoricoAjusteSaldo } from '@/types';
 import {
   DollarSign,
@@ -77,7 +78,7 @@ export function FinanceiroView() {
   const [abaAtiva, setAbaAtiva] = useState<'honorarios' | 'clientes-consolidado' | 'partilha' | 'pagar' | 'avulsas' | 'ofx' | 'bancos'>('honorarios');
 
   // Competência selecionada para a gestão de honorários (Apenas 10/2026 para frente)
-  const [competenciaSelecionada, setCompetenciaSelecionada] = useState<string>('10/2026');
+  const [competenciaSelecionada, setCompetenciaSelecionada] = useState<string>(obterCompetenciaAtual());
   const mesesDisponiveis = [
     '10/2026', '11/2026', '12/2026',
     '01/2027', '02/2027', '03/2027', '04/2027', '05/2027', '06/2027'

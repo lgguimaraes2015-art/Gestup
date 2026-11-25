@@ -697,6 +697,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
   const [colaboradores, setColaboradores] = useState<Colaborador[]>(initialColaboradores);
   const [tarefas, setTarefas] = useState<Tarefa[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedTarefas = localStorage.getItem('gestup_v2_tarefas');
+        if (savedTarefas) {
+          const parsed = JSON.parse(savedTarefas);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
     const base = [...initialTarefas];
     if (!base.some(ehRegistroSamira)) {
       base.push(tarefaRegistroSamiraPadrao);
@@ -876,7 +887,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       }
 
-      // Se v2 não continha tarefas, resgata da chave legado para preservar baixas e alterações
+      // Se v2 não continha tarefas, resgata da chave legado se disponível
       if (baseTarefas.length === 0 && legacyTarefas) {
         try {
           const parsedLegacy = JSON.parse(legacyTarefas);
@@ -886,48 +897,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       }
 
-      // Se ainda vazio, inicializa com initialTarefas
+      // Se ainda vazio (primeira inicialização do sistema), inicializa com initialTarefas
       if (baseTarefas.length === 0) {
         baseTarefas = [...initialTarefas];
       }
 
-      // Preservação Estrita de Baixas Efetuadas pelo Usuário
+      // Limpeza definitiva da chave legado para nunca mais poluir nem reverter baixas do usuário
       if (legacyTarefas) {
         try {
-          const parsedLegacy: Tarefa[] = JSON.parse(legacyTarefas);
-          if (Array.isArray(parsedLegacy)) {
-            parsedLegacy.forEach(legT => {
-              if (legT.status === 'Concluída') {
-                const idx = baseTarefas.findIndex(b => b.id === legT.id || (b.titulo === legT.titulo && b.cliente_id === legT.cliente_id));
-                if (idx !== -1) {
-                  baseTarefas[idx] = {
-                    ...baseTarefas[idx],
-                    status: 'Concluída',
-                    data_conclusao: legT.data_conclusao || baseTarefas[idx].data_conclusao,
-                    arquivos_anexos: legT.arquivos_anexos || baseTarefas[idx].arquivos_anexos
-                  };
-                }
-              }
-            });
-          }
+          localStorage.removeItem('gestup_tarefas');
         } catch {}
-      } else {
-        // Recuperação Segura Pós-Bug: se o mês 11/2026 foi esvaziado por reloads anteriores
-        // restaura tarefas das competências a partir de rawInitialTarefas sem perder as já existentes
-        const tarefas11 = baseTarefas.filter(t => t.competencia === '11/2026');
-        if (tarefas11.length <= 1) {
-          const recuperaveis = rawInitialTarefas.filter(
-            t => t.competencia === '11/2026' || t.competencia === '12/2026' || t.competencia === '01/2027'
-          );
-          recuperaveis.forEach(tOrig => {
-            const jaExiste = baseTarefas.some(
-              b => b.id === tOrig.id || (b.titulo === tOrig.titulo && b.cliente_id === tOrig.cliente_id && b.competencia === tOrig.competencia)
-            );
-            if (!jaExiste) {
-              baseTarefas.push(tOrig);
-            }
-          });
-        }
       }
 
       // Garante que "Registro - Samira" está sempre presente e protegida
@@ -2482,9 +2461,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
 
     // ALIMENTA AUTOMATICAMENTE O MENU 01 DE TAREFAS!
-    const compAtual = '10/2026';
-    const prazoMetaStr = `2026-10-${String(Math.max(1, declaracao.dia_vencimento - 3)).padStart(2, '0')}`;
-    const prazoLegalStr = `2026-10-${String(declaracao.dia_vencimento).padStart(2, '0')}`;
+    const compAtual = obterCompetenciaAtual();
+    const [mesComp, anoComp] = compAtual.split('/');
+    const diaVenc = Math.min(Math.max(1, declaracao.dia_vencimento), 28);
+    const diaMeta = Math.max(1, diaVenc - 3);
+    const prazoMetaStr = `${anoComp}-${mesComp}-${String(diaMeta).padStart(2, '0')}`;
+    const prazoLegalStr = `${anoComp}-${mesComp}-${String(diaVenc).padStart(2, '0')}`;
 
     addTarefa({
       titulo: declaracao.titulo,

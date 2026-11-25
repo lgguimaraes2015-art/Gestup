@@ -109,7 +109,7 @@ export function TarefasView({ modalOpen, setModalOpen }: TarefasViewProps) {
       const saved = localStorage.getItem('gestup_competencia_selecionada');
       if (saved) return saved;
     }
-    return '10/2026';
+    return obterCompetenciaAtual();
   });
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>('todos');
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');

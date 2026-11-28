@@ -153,7 +153,7 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
             )}
           </button>
 
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="text-base sm:text-lg md:text-xl font-bold text-slate-900 tracking-tight truncate">
               {title}
             </h1>
@@ -161,6 +161,46 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
               {desc}
             </p>
           </div>
+
+          {/* Selo de Nuvem em destaque na primeira linha no celular (< sm) */}
+          <button
+            type="button"
+            onClick={() => setSyncModalOpen(true)}
+            className={`sm:hidden ml-auto shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all shadow-xs ${
+              syncStatus === 'synced'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                : syncStatus === 'saving' || syncStatus === 'loading'
+                ? 'bg-blue-50 text-blue-800 border-blue-300'
+                : syncStatus === 'error'
+                ? 'bg-red-50 text-red-700 border-red-300'
+                : 'bg-amber-50 text-amber-900 border-amber-300'
+            }`}
+          >
+            {syncStatus === 'synced' && (
+              <>
+                <Cloud className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>Nuvem ✓</span>
+              </>
+            )}
+            {(syncStatus === 'saving' || syncStatus === 'loading') && (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
+                <span>Sync...</span>
+              </>
+            )}
+            {syncStatus === 'local_only' && (
+              <>
+                <CloudOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Local</span>
+              </>
+            )}
+            {syncStatus === 'error' && (
+              <>
+                <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                <span>Erro Sync</span>
+              </>
+            )}
+          </button>
         </div>
 
         {/* Ações & Indicadores Inteligentes */}
@@ -227,7 +267,7 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
             <span className="sm:hidden">Resumo Equipe</span>
           </button>
 
-          {/* Indicador & Controle Real de Sincronização na Nuvem */}
+          {/* Indicador & Controle Real de Sincronização na Nuvem (Desktop >= sm) */}
           <button
             type="button"
             onClick={() => setSyncModalOpen(true)}
@@ -242,7 +282,7 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
                 ? `Erro ao salvar na nuvem: ${syncError || 'sem conexão'}. Clique para tentar novamente.`
                 : 'Verificando conexão com o banco de dados na nuvem...'
             }
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-[11px] sm:text-xs font-semibold transition-all shadow-subtle ${
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all shadow-subtle ${
               syncStatus === 'synced'
                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
                 : syncStatus === 'saving' || syncStatus === 'loading'

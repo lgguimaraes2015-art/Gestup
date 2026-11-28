@@ -6,17 +6,34 @@ const globalForDb = globalThis as unknown as {
 };
 
 export function getDatabaseUrl(): string | null {
-  const url =
+  const direct =
     process.env.POSTGRES_URL ||
     process.env.DATABASE_URL ||
+    process.env.STORAGE_POSTGRES_URL ||
+    process.env.STORAGE_DATABASE_URL ||
+    process.env.STORAGE_URL ||
     process.env.POSTGRES_PRISMA_URL ||
     process.env.POSTGRES_URL_NON_POOLING ||
     process.env.NEON_DATABASE_URL ||
     process.env.SUPABASE_DB_URL ||
     '';
 
-  const trimmed = url.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  if (direct.trim().length > 0) {
+    return direct.trim();
+  }
+
+  // Fallback automático: detecta qualquer variável criada pela Vercel com Custom Prefix (ex: STORAGE_DATABASE_URL)
+  for (const [key, val] of Object.entries(process.env)) {
+    if (
+      val &&
+      /^(postgres|postgresql):\/\//i.test(val.trim()) &&
+      /(POSTGRES|DATABASE|STORAGE|NEON|SUPABASE)/i.test(key)
+    ) {
+      return val.trim();
+    }
+  }
+
+  return null;
 }
 
 export function isDatabaseConfigured(): boolean {

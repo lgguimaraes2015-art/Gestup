@@ -1115,6 +1115,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setCloudConfigured(true);
       setLastSyncAt(json.updatedAt || new Date().toISOString());
       setSyncStatus('synced');
+      try {
+        localStorage.setItem('gestup_cloud_joined_v1', 'true');
+      } catch {}
       return {
         ok: true,
         message: 'Todos os dados deste aparelho foram enviados e salvos na nuvem!'
@@ -1154,9 +1157,117 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setSyncError(null);
 
       if (json.keysCount > 0 && json.data && typeof json.data === 'object') {
+        const cloudData = { ...(json.data as Record<string, unknown>) };
+
         // Não sobrescreve enquanto o usuário tem gravações pendentes para subir
         if (Object.keys(pendingCloudUpdatesRef.current).length === 0 && !isFlushingRef.current) {
-          applyCloudSnapshot(json.data as Record<string, unknown>);
+          const jaPareado = typeof window !== 'undefined' && localStorage.getItem('gestup_cloud_joined_v1') === 'true';
+          const updatesMesclados: Record<string, unknown> = {};
+
+          // PRIMEIRA SINCRONIZAÇÃO DESTE APARELHO (ex: celular com pagamentos já baixados antes da nuvem):
+          // Faz merge automático para NUNCA sobrescrever baixas de pagamentos ou tarefas já concluídas neste aparelho!
+          if (!jaPareado) {
+            // 1. Merge seguro de Honorários / Pagamentos dos Clientes
+            const localHons = (stateSnapshotRef.current.gestup_v2_honorarios as HonorarioItem[]) || [];
+            const cloudHons = Array.isArray(cloudData.gestup_v2_honorarios)
+              ? [...(cloudData.gestup_v2_honorarios as HonorarioItem[])]
+              : [];
+
+            if (localHons.length > 0 && cloudHons.length > 0) {
+              let mudouHons = false;
+              const mergedHons = [...cloudHons];
+
+              for (const lh of localHons) {
+                const idx = mergedHons.findIndex(
+                  ch =>
+                    ch.id === lh.id ||
+                    (ch.cliente_id && lh.cliente_id && ch.cliente_id === lh.cliente_id && ch.competencia === lh.competencia) ||
+                    ((ch.cliente_nome || '').trim().toLowerCase() === (lh.cliente_nome || '').trim().toLowerCase() &&
+                      ch.competencia === lh.competencia)
+                );
+
+                if (idx === -1) {
+                  // Honorário criado neste aparelho (ex: competência 11/2026 gerada no celular) e ausente na nuvem
+                  mergedHons.push(lh);
+                  mudouHons = true;
+                } else if (lh.status === 'Pago' && mergedHons[idx].status !== 'Pago') {
+                  // Pagamento já baixado neste aparelho: preserva a baixa!
+                  mergedHons[idx] = { ...mergedHons[idx], ...lh };
+                  mudouHons = true;
+                }
+              }
+
+              if (mudouHons) {
+                cloudData.gestup_v2_honorarios = mergedHons;
+                updatesMesclados.gestup_v2_honorarios = mergedHons;
+              }
+            }
+
+            // 2. Merge seguro de Tarefas Concluídas
+            const localTars = (stateSnapshotRef.current.gestup_v2_tarefas as Tarefa[]) || [];
+            const cloudTars = Array.isArray(cloudData.gestup_v2_tarefas)
+              ? [...(cloudData.gestup_v2_tarefas as Tarefa[])]
+              : [];
+
+            if (localTars.length > 0 && cloudTars.length > 0) {
+              let mudouTars = false;
+              const mergedTars = [...cloudTars];
+
+              for (const lt of localTars) {
+                if (lt.status !== 'Concluída') continue;
+                const idx = mergedTars.findIndex(
+                  ct =>
+                    ct.id === lt.id ||
+                    (ct.cliente_id === lt.cliente_id &&
+                      ct.titulo === lt.titulo &&
+                      ct.competencia === lt.competencia)
+                );
+                if (idx !== -1 && mergedTars[idx].status !== 'Concluída') {
+                  mergedTars[idx] = {
+                    ...mergedTars[idx],
+                    status: 'Concluída',
+                    data_conclusao: lt.data_conclusao || mergedTars[idx].data_conclusao,
+                    arquivos_anexos: lt.arquivos_anexos || mergedTars[idx].arquivos_anexos
+                  };
+                  mudouTars = true;
+                }
+              }
+
+              if (mudouTars) {
+                cloudData.gestup_v2_tarefas = mergedTars;
+                updatesMesclados.gestup_v2_tarefas = mergedTars;
+              }
+            }
+
+            try {
+              localStorage.setItem('gestup_cloud_joined_v1', 'true');
+            } catch {}
+          }
+
+          applyCloudSnapshot(cloudData);
+
+          // Se este aparelho tinha baixas locais preservadas no merge, sobe imediatamente para a nuvem!
+          if (Object.keys(updatesMesclados).length > 0) {
+            try {
+              const pushRes = await fetch('/api/state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ updates: updatesMesclados })
+              });
+              const pushJson = await pushRes.json().catch(() => ({}));
+              setLastSyncAt(pushJson?.updatedAt || new Date().toISOString());
+              setSyncStatus('synced');
+              return {
+                ok: true,
+                message: 'Pagamentos e tarefas locais mesclados e enviados para a nuvem com sucesso!'
+              };
+            } catch {
+              // Se falhar o push imediato, coloca na fila para reenvio automático
+              for (const [k, v] of Object.entries(updatesMesclados)) {
+                pendingCloudUpdatesRef.current[k] = v;
+              }
+            }
+          }
         }
         setLastSyncAt(json.updatedAt || new Date().toISOString());
         setSyncStatus('synced');

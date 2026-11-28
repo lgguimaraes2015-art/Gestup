@@ -7,10 +7,17 @@ import {
   Plus,
   Send,
   AlertTriangle,
-  CheckCheck,
   PanelLeftClose,
   PanelLeftOpen,
-  Menu
+  Menu,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  UploadCloud,
+  DownloadCloud,
+  X,
+  Database,
+  CheckCircle2
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -27,10 +34,18 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
     toggleSidebar,
     toggleMobileMenu,
     userRole,
-    setUserRole
+    setUserRole,
+    syncStatus,
+    cloudConfigured,
+    lastSyncAt,
+    syncError,
+    sincronizarDaNuvem,
+    enviarTudoParaNuvem
   } = useApp();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [syncModalOpen, setSyncModalOpen] = useState<boolean>(false);
+  const [syncActionBusy, setSyncActionBusy] = useState<'pull' | 'push' | null>(null);
 
   const tarefasAtrasadas = tarefas.filter(t => t.status === 'Atrasada').length;
 
@@ -40,9 +55,29 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleSincronizar = () => {
-    setToastMessage('✅ Dados salvos e sincronizados localmente em tempo real!');
-    setTimeout(() => setToastMessage(null), 3500);
+  const handleBaixarDaNuvem = async () => {
+    setSyncActionBusy('pull');
+    const res = await sincronizarDaNuvem();
+    setSyncActionBusy(null);
+    setToastMessage(res.ok ? `☁️ ${res.message}` : `⚠️ ${res.message}`);
+    setTimeout(() => setToastMessage(null), 4500);
+  };
+
+  const handleEnviarParaNuvem = async () => {
+    setSyncActionBusy('push');
+    const res = await enviarTudoParaNuvem();
+    setSyncActionBusy(null);
+    setToastMessage(res.ok ? `☁️ ${res.message}` : `⚠️ ${res.message}`);
+    setTimeout(() => setToastMessage(null), 4500);
+  };
+
+  const formatLastSync = (iso: string | null) => {
+    if (!iso) return 'Ainda não sincronizado';
+    try {
+      return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch {
+      return iso;
+    }
   };
 
   const getPageTitle = () => {
@@ -192,19 +227,61 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
             <span className="sm:hidden">Resumo Equipe</span>
           </button>
 
-          {/* Indicador & Botão de Salvamento em Tempo Real */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Salvo em tempo real</span>
-          </div>
-
+          {/* Indicador & Controle Real de Sincronização na Nuvem */}
           <button
-            onClick={handleSincronizar}
-            title="Todos os honorários, cadastros e tarefas são gravados em tempo real no navegador"
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] sm:text-xs font-semibold transition-all shadow-subtle"
+            type="button"
+            onClick={() => setSyncModalOpen(true)}
+            title={
+              syncStatus === 'synced'
+                ? `Salvo na nuvem (última sincronização: ${formatLastSync(lastSyncAt)}). Clique para gerenciar.`
+                : syncStatus === 'saving'
+                ? 'Salvando alterações no banco de dados na nuvem...'
+                : syncStatus === 'local_only'
+                ? 'Banco na nuvem ainda não conectado na Vercel — clique para ativar em 1 minuto'
+                : syncStatus === 'error'
+                ? `Erro ao salvar na nuvem: ${syncError || 'sem conexão'}. Clique para tentar novamente.`
+                : 'Verificando conexão com o banco de dados na nuvem...'
+            }
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-[11px] sm:text-xs font-semibold transition-all shadow-subtle ${
+              syncStatus === 'synced'
+                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                : syncStatus === 'saving' || syncStatus === 'loading'
+                ? 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200'
+                : syncStatus === 'error'
+                ? 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300'
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+            }`}
           >
-            <CheckCheck className="w-3.5 h-3.5 text-brand-green shrink-0" />
-            <span className="hidden md:inline">Sincronizado</span>
+            {syncStatus === 'synced' && (
+              <>
+                <Cloud className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="hidden sm:inline">Salvo na nuvem</span>
+                <span className="sm:hidden">Nuvem ✓</span>
+              </>
+            )}
+            {(syncStatus === 'saving' || syncStatus === 'loading') && (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
+                <span className="hidden sm:inline">
+                  {syncStatus === 'saving' ? 'Salvando...' : 'Sincronizando...'}
+                </span>
+                <span className="sm:hidden">Sync...</span>
+              </>
+            )}
+            {syncStatus === 'local_only' && (
+              <>
+                <CloudOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="hidden sm:inline">Só neste aparelho</span>
+                <span className="sm:hidden">Local</span>
+              </>
+            )}
+            {syncStatus === 'error' && (
+              <>
+                <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                <span className="hidden sm:inline">Erro ao salvar</span>
+                <span className="sm:hidden">Erro Sync</span>
+              </>
+            )}
           </button>
 
           {/* Botão Principal de Adição Contextual */}
@@ -229,6 +306,122 @@ export function Header({ onNovaTarefaClick, onNovoLeadClick }: HeaderProps) {
           )}
         </div>
       </div>
+
+      {/* Modal de Sincronização em Nuvem (Celular <-> Computador) */}
+      {syncModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setSyncModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-9 h-9 rounded-2xl flex items-center justify-center ${
+                  cloudConfigured ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                }`}>
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Sincronização em Nuvem (GestUp)</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Compartilhamento em tempo real entre celular, computador e equipe
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSyncModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                aria-label="Fechar modal de sincronização"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Status Atual */}
+              <div className={`p-4 rounded-2xl border ${
+                cloudConfigured && syncStatus !== 'error'
+                  ? 'bg-emerald-50 border-emerald-200'
+                  : syncStatus === 'error'
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-amber-50 border-amber-200'
+              }`}>
+                <div className="flex items-start gap-3">
+                  {cloudConfigured && syncStatus !== 'error' ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : syncStatus === 'error' ? (
+                    <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <CloudOff className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  )}
+                  <div className="text-xs space-y-1">
+                    <p className="font-bold text-slate-900">
+                      {cloudConfigured && syncStatus !== 'error'
+                        ? 'Banco PostgreSQL na nuvem conectado!'
+                        : syncStatus === 'error'
+                        ? 'Falha temporária ao salvar na nuvem'
+                        : 'Banco de dados na nuvem ainda não ativado na Vercel'}
+                    </p>
+                    <p className="text-slate-600 leading-relaxed">
+                      {cloudConfigured && syncStatus !== 'error'
+                        ? `Todas as baixas de pagamentos, tarefas e clientes são salvos automaticamente na nuvem. Última sincronização: ${formatLastSync(lastSyncAt)}.`
+                        : syncStatus === 'error'
+                        ? `Detalhes: ${syncError || 'Sem resposta do servidor'}. Seus dados continuam protegidos localmente até a conexão voltar.`
+                        : 'Atualmente suas alterações ficam salvas somente no navegador deste aparelho. O que você alterar no celular só aparecerá no computador após conectar o banco gratuito na Vercel.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {!cloudConfigured && (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2.5 text-xs text-slate-700">
+                  <p className="font-bold text-slate-900">Como ativar em 1 minuto na Vercel (grátis):</p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-slate-600">
+                    <li>Abra <strong>vercel.com</strong> e entre no projeto <strong>GestUp</strong>.</li>
+                    <li>Clique na aba <strong>Storage</strong> no menu superior.</li>
+                    <li>Clique em <strong>Create Database</strong> → escolha <strong>Neon</strong> (Postgres gratuito).</li>
+                    <li>Clique em <strong>Connect Project</strong> para o GestUp e depois faça <strong>Redeploy</strong>.</li>
+                  </ol>
+                  <p className="text-[11px] text-slate-500 pt-1">
+                    As tabelas são criadas automaticamente pelo GestUp na primeira conexão.
+                  </p>
+                </div>
+              )}
+
+              {/* Ações Manuais (Baixar da Nuvem / Enviar dados deste aparelho para resgate) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  disabled={syncActionBusy !== null}
+                  onClick={handleBaixarDaNuvem}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs border border-slate-200 transition-all disabled:opacity-50"
+                >
+                  <DownloadCloud className={`w-4 h-4 text-brand-blue ${syncActionBusy === 'pull' ? 'animate-bounce' : ''}`} />
+                  <span>{cloudConfigured ? 'Baixar da nuvem agora' : 'Testar conexão agora'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={syncActionBusy !== null}
+                  onClick={handleEnviarParaNuvem}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white font-semibold text-xs shadow-sm transition-all disabled:opacity-50"
+                >
+                  <UploadCloud className={`w-4 h-4 ${syncActionBusy === 'push' ? 'animate-bounce' : ''}`} />
+                  <span>Enviar dados deste aparelho</span>
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-500 text-center">
+                Dica: Se você lançou pagamentos no celular antes de ativar a nuvem, abra o GestUp no celular e clique em <strong>&ldquo;Enviar dados deste aparelho&rdquo;</strong> para subir tudo sem redigitar.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

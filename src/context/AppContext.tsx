@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { CloudSyncKey, CloudSyncStatus, safeLocalStorageSet } from '@/lib/cloudSync';
 import {
   Cliente,
   Colaborador,
@@ -346,6 +347,14 @@ interface AppContextType {
   sincronizarDPComTarefasGestup: () => { criadas: number; existentes: number; tarefasCriadas: string[] };
   promoverProcessoAdmissaoParaDP: (tarefa: Tarefa) => void;
   zerarDadosDP: () => void;
+
+  // Sincronização em Nuvem (PostgreSQL)
+  syncStatus: CloudSyncStatus;
+  cloudConfigured: boolean;
+  lastSyncAt: string | null;
+  syncError: string | null;
+  sincronizarDaNuvem: () => Promise<{ ok: boolean; message: string }>;
+  enviarTudoParaNuvem: () => Promise<{ ok: boolean; message: string }>;
 
   redefinirDadosPadrao: () => void;
 }
@@ -772,32 +781,131 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dpControleVencimentos, setDPControleVencimentos] = useState<DPControleVencimento[]>(initialDPControleVencimentos);
   const [dpDiarioBordo, setDPDiarioBordo] = useState<DPDiarioBordo[]>(initialDPDiarioBordo);
 
+  // ================= MOTOR DE SINCRONIZAÇÃO EM NUVEM (POSTGRESQL / VERCEL) =================
+  const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>('loading');
+  const [cloudConfigured, setCloudConfigured] = useState<boolean>(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const pendingCloudUpdatesRef = useRef<Record<string, unknown>>({});
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cloudConfiguredRef = useRef<boolean>(false);
+  const isFlushingRef = useRef<boolean>(false);
+
+  const flushPendingCloudUpdates = useCallback(async (useKeepalive = false) => {
+    const entries = Object.entries(pendingCloudUpdatesRef.current);
+    if (entries.length === 0) return;
+
+    // Se já sabemos que o banco não está configurado, não spamma requests no unload
+    if (!cloudConfiguredRef.current && useKeepalive) return;
+
+    const batch: Record<string, unknown> = {};
+    for (const [k, v] of entries) {
+      batch[k] = v;
+    }
+    pendingCloudUpdatesRef.current = {};
+
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+
+    isFlushingRef.current = true;
+    setSyncStatus('saving');
+
+    try {
+      const payloadStr = JSON.stringify({ updates: batch });
+      // keepalive em fetch suporta até ~64KB; payloads maiores usam fetch normal
+      const canKeepalive = useKeepalive && payloadStr.length < 60000;
+
+      const res = await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payloadStr,
+        keepalive: canKeepalive
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (res.status === 503 && json?.configured === false) {
+        cloudConfiguredRef.current = false;
+        setCloudConfigured(false);
+        setSyncStatus('local_only');
+        setSyncError(null);
+        return;
+      }
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `Falha HTTP ${res.status} ao salvar na nuvem`);
+      }
+
+      cloudConfiguredRef.current = true;
+      setCloudConfigured(true);
+      setLastSyncAt(json.updatedAt || new Date().toISOString());
+      setSyncError(null);
+
+      // Se novas mudanças chegaram enquanto este batch estava enviando, dispara novo flush
+      if (Object.keys(pendingCloudUpdatesRef.current).length > 0) {
+        flushTimerRef.current = setTimeout(() => {
+          flushPendingCloudUpdates(false);
+        }, 120);
+      } else {
+        setSyncStatus('synced');
+      }
+    } catch (err) {
+      // Devolve à fila qualquer chave que não tenha sido sobrescrita por uma edição mais nova
+      for (const [k, v] of Object.entries(batch)) {
+        if (!(k in pendingCloudUpdatesRef.current)) {
+          pendingCloudUpdatesRef.current[k] = v;
+        }
+      }
+      const msg = err instanceof Error ? err.message : 'Sem conexão com o servidor';
+      setSyncError(msg);
+      setSyncStatus('error');
+    } finally {
+      isFlushingRef.current = false;
+    }
+  }, []);
+
+  const persistStateKey = useCallback((key: CloudSyncKey, value: unknown) => {
+    const localRes = safeLocalStorageSet(key, value);
+    if (!localRes.ok && !cloudConfiguredRef.current) {
+      setSyncError('Armazenamento local cheio no navegador. Conecte o banco na nuvem para salvar sem limite.');
+      setSyncStatus('error');
+    }
+
+    pendingCloudUpdatesRef.current[key] = value;
+
+    if (cloudConfiguredRef.current) {
+      setSyncStatus('saving');
+    }
+
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+    }
+    flushTimerRef.current = setTimeout(() => {
+      flushPendingCloudUpdates(false);
+    }, 180);
+  }, [flushPendingCloudUpdates]);
+
   const saveDPEmpresasConfig = (dados: DPEmpresaConfig[]) => {
     setDPEmpresasConfig(dados);
-    try {
-      localStorage.setItem('gestup_v2_dp_empresas_config', JSON.stringify(dados));
-    } catch {}
+    persistStateKey('gestup_v2_dp_empresas_config', dados);
   };
 
   const saveDPFuncionarios = (dados: DPFuncionario[]) => {
     setDPFuncionarios(dados);
-    try {
-      localStorage.setItem('gestup_v2_dp_funcionarios', JSON.stringify(dados));
-    } catch {}
+    persistStateKey('gestup_v2_dp_funcionarios', dados);
   };
 
   const saveDPControleVencimentos = (dados: DPControleVencimento[]) => {
     setDPControleVencimentos(dados);
-    try {
-      localStorage.setItem('gestup_v2_dp_controle_vencimentos', JSON.stringify(dados));
-    } catch {}
+    persistStateKey('gestup_v2_dp_controle_vencimentos', dados);
   };
 
   const saveDPDiarioBordo = (dados: DPDiarioBordo[]) => {
     setDPDiarioBordo(dados);
-    try {
-      localStorage.setItem('gestup_v2_dp_diario_bordo', JSON.stringify(dados));
-    } catch {}
+    persistStateKey('gestup_v2_dp_diario_bordo', dados);
   };
 
   // A TELA PRINCIPAL AGORA É O DASHBOARD (Power BI)
@@ -832,24 +940,288 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const saveDocumentosPortal = (dados: DocumentoPortalCliente[]) => {
     setDocumentosPortal(dados);
-    try {
-      localStorage.setItem('gestup_v2_portal_documentos', JSON.stringify(dados));
-    } catch {}
+    persistStateKey('gestup_v2_portal_documentos', dados);
   };
 
   const saveSolicitacoesPortal = (dados: SolicitacaoPortalCliente[]) => {
     setSolicitacoesPortal(dados);
-    try {
-      localStorage.setItem('gestup_v2_portal_solicitacoes', JSON.stringify(dados));
-    } catch {}
+    persistStateKey('gestup_v2_portal_solicitacoes', dados);
   };
 
   const saveEmpresasRadar = (dados: EmpresaRadarFiscal[]) => {
     setEmpresasRadar(dados);
-    try {
-      localStorage.setItem('gestup_v2_radar_fiscal', JSON.stringify(dados));
-    } catch {}
+    persistStateKey('gestup_v2_radar_fiscal', dados);
   };
+
+  // Ref sempre atualizada com o snapshot completo em memória para envio/resgate à nuvem
+  const stateSnapshotRef = useRef<Record<CloudSyncKey, unknown>>({
+    gestup_v2_tarefas: tarefas,
+    gestup_v2_clientes: clientes,
+    gestup_v2_honorarios: honorarios,
+    gestup_v2_colaboradores: colaboradores,
+    gestup_v2_declaracoes: declaracoes,
+    gestup_v2_contas_pagar: contasPagar,
+    gestup_v2_contas_receber: contasReceber,
+    gestup_v2_contas_bancarias: contasBancarias,
+    gestup_v2_historico_ajustes_saldo: historicoAjustesSaldo,
+    gestup_v2_leads: leads,
+    gestup_v2_modelos_mensagens: modelosMensagens,
+    gestup_v2_whatsapp_config: whatsAppConfig,
+    gestup_v2_portal_documentos: documentosPortal,
+    gestup_v2_portal_solicitacoes: solicitacoesPortal,
+    gestup_v2_radar_fiscal: empresasRadar,
+    gestup_v2_dp_empresas_config: dpEmpresasConfig,
+    gestup_v2_dp_funcionarios: dpFuncionarios,
+    gestup_v2_dp_controle_vencimentos: dpControleVencimentos,
+    gestup_v2_dp_diario_bordo: dpDiarioBordo
+  });
+
+  stateSnapshotRef.current = {
+    gestup_v2_tarefas: tarefas,
+    gestup_v2_clientes: clientes,
+    gestup_v2_honorarios: honorarios,
+    gestup_v2_colaboradores: colaboradores,
+    gestup_v2_declaracoes: declaracoes,
+    gestup_v2_contas_pagar: contasPagar,
+    gestup_v2_contas_receber: contasReceber,
+    gestup_v2_contas_bancarias: contasBancarias,
+    gestup_v2_historico_ajustes_saldo: historicoAjustesSaldo,
+    gestup_v2_leads: leads,
+    gestup_v2_modelos_mensagens: modelosMensagens,
+    gestup_v2_whatsapp_config: whatsAppConfig,
+    gestup_v2_portal_documentos: documentosPortal,
+    gestup_v2_portal_solicitacoes: solicitacoesPortal,
+    gestup_v2_radar_fiscal: empresasRadar,
+    gestup_v2_dp_empresas_config: dpEmpresasConfig,
+    gestup_v2_dp_funcionarios: dpFuncionarios,
+    gestup_v2_dp_controle_vencimentos: dpControleVencimentos,
+    gestup_v2_dp_diario_bordo: dpDiarioBordo
+  };
+
+  const applyCloudSnapshot = useCallback((data: Record<string, unknown>) => {
+    if (Array.isArray(data.gestup_v2_tarefas)) {
+      const lista = (data.gestup_v2_tarefas as Tarefa[]).map(enrichTarefa);
+      setTarefas(lista);
+      safeLocalStorageSet('gestup_v2_tarefas', lista);
+    }
+    if (Array.isArray(data.gestup_v2_clientes)) {
+      const lista = (data.gestup_v2_clientes as Cliente[]).map(enrichCliente);
+      setClientes(lista);
+      safeLocalStorageSet('gestup_v2_clientes', lista);
+    }
+    if (Array.isArray(data.gestup_v2_honorarios)) {
+      setHonorarios(data.gestup_v2_honorarios as HonorarioItem[]);
+      safeLocalStorageSet('gestup_v2_honorarios', data.gestup_v2_honorarios);
+    }
+    if (Array.isArray(data.gestup_v2_colaboradores)) {
+      setColaboradores(data.gestup_v2_colaboradores as Colaborador[]);
+      safeLocalStorageSet('gestup_v2_colaboradores', data.gestup_v2_colaboradores);
+    }
+    if (Array.isArray(data.gestup_v2_declaracoes)) {
+      const lista = (data.gestup_v2_declaracoes as Declaracao[]).map(enrichDeclaracao);
+      setDeclaracoes(lista);
+      safeLocalStorageSet('gestup_v2_declaracoes', lista);
+    }
+    if (Array.isArray(data.gestup_v2_contas_pagar)) {
+      setContasPagar(data.gestup_v2_contas_pagar as ContaPagar[]);
+      safeLocalStorageSet('gestup_v2_contas_pagar', data.gestup_v2_contas_pagar);
+    }
+    if (Array.isArray(data.gestup_v2_contas_receber)) {
+      setContasReceber(data.gestup_v2_contas_receber as ContaReceber[]);
+      safeLocalStorageSet('gestup_v2_contas_receber', data.gestup_v2_contas_receber);
+    }
+    if (Array.isArray(data.gestup_v2_contas_bancarias)) {
+      setContasBancarias(data.gestup_v2_contas_bancarias as ContaBancaria[]);
+      safeLocalStorageSet('gestup_v2_contas_bancarias', data.gestup_v2_contas_bancarias);
+    }
+    if (Array.isArray(data.gestup_v2_historico_ajustes_saldo)) {
+      setHistoricoAjustesSaldo(data.gestup_v2_historico_ajustes_saldo as HistoricoAjusteSaldo[]);
+      safeLocalStorageSet('gestup_v2_historico_ajustes_saldo', data.gestup_v2_historico_ajustes_saldo);
+    }
+    if (Array.isArray(data.gestup_v2_leads)) {
+      setLeads(data.gestup_v2_leads as CRMLead[]);
+      safeLocalStorageSet('gestup_v2_leads', data.gestup_v2_leads);
+    }
+    if (Array.isArray(data.gestup_v2_modelos_mensagens)) {
+      setModelosMensagens(data.gestup_v2_modelos_mensagens as ModeloMensagemTarefa[]);
+      safeLocalStorageSet('gestup_v2_modelos_mensagens', data.gestup_v2_modelos_mensagens);
+    }
+    if (data.gestup_v2_whatsapp_config && typeof data.gestup_v2_whatsapp_config === 'object') {
+      setWhatsAppConfig(prev => {
+        const merged = { ...prev, ...(data.gestup_v2_whatsapp_config as Partial<WhatsAppConfig>) };
+        safeLocalStorageSet('gestup_v2_whatsapp_config', merged);
+        return merged;
+      });
+    }
+    if (Array.isArray(data.gestup_v2_portal_documentos)) {
+      setDocumentosPortal(data.gestup_v2_portal_documentos as DocumentoPortalCliente[]);
+      safeLocalStorageSet('gestup_v2_portal_documentos', data.gestup_v2_portal_documentos);
+    }
+    if (Array.isArray(data.gestup_v2_portal_solicitacoes)) {
+      setSolicitacoesPortal(data.gestup_v2_portal_solicitacoes as SolicitacaoPortalCliente[]);
+      safeLocalStorageSet('gestup_v2_portal_solicitacoes', data.gestup_v2_portal_solicitacoes);
+    }
+    if (Array.isArray(data.gestup_v2_radar_fiscal)) {
+      setEmpresasRadar(data.gestup_v2_radar_fiscal as EmpresaRadarFiscal[]);
+      safeLocalStorageSet('gestup_v2_radar_fiscal', data.gestup_v2_radar_fiscal);
+    }
+    if (Array.isArray(data.gestup_v2_dp_empresas_config)) {
+      setDPEmpresasConfig(data.gestup_v2_dp_empresas_config as DPEmpresaConfig[]);
+      safeLocalStorageSet('gestup_v2_dp_empresas_config', data.gestup_v2_dp_empresas_config);
+    }
+    if (Array.isArray(data.gestup_v2_dp_funcionarios)) {
+      setDPFuncionarios(data.gestup_v2_dp_funcionarios as DPFuncionario[]);
+      safeLocalStorageSet('gestup_v2_dp_funcionarios', data.gestup_v2_dp_funcionarios);
+    }
+    if (Array.isArray(data.gestup_v2_dp_controle_vencimentos)) {
+      setDPControleVencimentos(data.gestup_v2_dp_controle_vencimentos as DPControleVencimento[]);
+      safeLocalStorageSet('gestup_v2_dp_controle_vencimentos', data.gestup_v2_dp_controle_vencimentos);
+    }
+    if (Array.isArray(data.gestup_v2_dp_diario_bordo)) {
+      setDPDiarioBordo(data.gestup_v2_dp_diario_bordo as DPDiarioBordo[]);
+      safeLocalStorageSet('gestup_v2_dp_diario_bordo', data.gestup_v2_dp_diario_bordo);
+    }
+  }, []);
+
+  const enviarTudoParaNuvem = useCallback(async (): Promise<{ ok: boolean; message: string }> => {
+    setSyncStatus('saving');
+    setSyncError(null);
+
+    try {
+      const updates: Record<string, unknown> = { ...stateSnapshotRef.current };
+      const res = await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates })
+      });
+      const json = await res.json().catch(() => ({}));
+
+      if (res.status === 503 && json?.configured === false) {
+        cloudConfiguredRef.current = false;
+        setCloudConfigured(false);
+        setSyncStatus('local_only');
+        return {
+          ok: false,
+          message: 'Banco na nuvem ainda não conectado na Vercel (aba Storage → Create Database → Neon).'
+        };
+      }
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `Erro HTTP ${res.status}`);
+      }
+
+      pendingCloudUpdatesRef.current = {};
+      cloudConfiguredRef.current = true;
+      setCloudConfigured(true);
+      setLastSyncAt(json.updatedAt || new Date().toISOString());
+      setSyncStatus('synced');
+      return {
+        ok: true,
+        message: 'Todos os dados deste aparelho foram enviados e salvos na nuvem!'
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao conectar com a nuvem';
+      setSyncError(msg);
+      setSyncStatus('error');
+      return { ok: false, message: msg };
+    }
+  }, []);
+
+  const sincronizarDaNuvem = useCallback(async (silencioso = false): Promise<{ ok: boolean; message: string }> => {
+    if (!silencioso) setSyncStatus('loading');
+
+    try {
+      const res = await fetch('/api/state', { cache: 'no-store' });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(json?.error || `Erro HTTP ${res.status}`);
+      }
+
+      if (json?.configured === false) {
+        cloudConfiguredRef.current = false;
+        setCloudConfigured(false);
+        setSyncStatus('local_only');
+        setSyncError(null);
+        return {
+          ok: false,
+          message: 'Banco na nuvem ainda não conectado na Vercel (dados salvos apenas neste aparelho).'
+        };
+      }
+
+      cloudConfiguredRef.current = true;
+      setCloudConfigured(true);
+      setSyncError(null);
+
+      if (json.keysCount > 0 && json.data && typeof json.data === 'object') {
+        // Não sobrescreve enquanto o usuário tem gravações pendentes para subir
+        if (Object.keys(pendingCloudUpdatesRef.current).length === 0 && !isFlushingRef.current) {
+          applyCloudSnapshot(json.data as Record<string, unknown>);
+        }
+        setLastSyncAt(json.updatedAt || new Date().toISOString());
+        setSyncStatus('synced');
+        return {
+          ok: true,
+          message: 'Dados atualizados da nuvem com sucesso!'
+        };
+      }
+
+      // Banco na nuvem recém-criado e ainda vazio: sobe automaticamente o estado atual deste aparelho
+      const uploadRes = await enviarTudoParaNuvem();
+      return uploadRes;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Falha ao sincronizar com a nuvem';
+      setSyncError(msg);
+      setSyncStatus('error');
+      return { ok: false, message: msg };
+    }
+  }, [applyCloudSnapshot, enviarTudoParaNuvem]);
+
+  // Boot da nuvem + sincronização automática ao voltar para o app (Celular <-> PC) + flush antes de fechar
+  useEffect(() => {
+    const bootTimer = setTimeout(() => {
+      sincronizarDaNuvem(false);
+    }, 150);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (Object.keys(pendingCloudUpdatesRef.current).length > 0) {
+          flushPendingCloudUpdates(true);
+        }
+      } else if (document.visibilityState === 'visible') {
+        if (Object.keys(pendingCloudUpdatesRef.current).length > 0) {
+          flushPendingCloudUpdates(false);
+        } else if (cloudConfiguredRef.current) {
+          sincronizarDaNuvem(true);
+        }
+      }
+    };
+
+    const handlePageHide = () => {
+      if (Object.keys(pendingCloudUpdatesRef.current).length > 0) {
+        flushPendingCloudUpdates(true);
+      }
+    };
+
+    const handleOnline = () => {
+      if (Object.keys(pendingCloudUpdatesRef.current).length > 0) {
+        flushPendingCloudUpdates(false);
+      } else {
+        sincronizarDaNuvem(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      clearTimeout(bootTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [sincronizarDaNuvem, flushPendingCloudUpdates]);
 
   // Carregar preferência do menu recolhível
   useEffect(() => {
@@ -1305,52 +1677,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const saveTarefas = (newTarefas: Tarefa[]) => {
     setTarefas(newTarefas);
-    try { localStorage.setItem('gestup_v2_tarefas', JSON.stringify(newTarefas)); } catch {}
+    persistStateKey('gestup_v2_tarefas', newTarefas);
   };
 
   const saveColaboradores = (newColabs: Colaborador[]) => {
     setColaboradores(newColabs);
-    try { localStorage.setItem('gestup_v2_colaboradores', JSON.stringify(newColabs)); } catch {}
+    persistStateKey('gestup_v2_colaboradores', newColabs);
   };
 
   const saveClientes = (newClientes: Cliente[]) => {
     setClientes(newClientes);
-    try { localStorage.setItem('gestup_v2_clientes', JSON.stringify(newClientes)); } catch {}
+    persistStateKey('gestup_v2_clientes', newClientes);
   };
 
   const saveDeclaracoes = (newDecs: Declaracao[]) => {
     setDeclaracoes(newDecs);
-    try { localStorage.setItem('gestup_v2_declaracoes', JSON.stringify(newDecs)); } catch {}
+    persistStateKey('gestup_v2_declaracoes', newDecs);
   };
 
   const saveContasPagar = (newPagar: ContaPagar[]) => {
     setContasPagar(newPagar);
-    try { localStorage.setItem('gestup_v2_contas_pagar', JSON.stringify(newPagar)); } catch {}
+    persistStateKey('gestup_v2_contas_pagar', newPagar);
   };
 
   const saveContasReceber = (newReceber: ContaReceber[]) => {
     setContasReceber(newReceber);
-    try { localStorage.setItem('gestup_v2_contas_receber', JSON.stringify(newReceber)); } catch {}
+    persistStateKey('gestup_v2_contas_receber', newReceber);
   };
 
   const saveHonorarios = (newHons: HonorarioItem[]) => {
     setHonorarios(newHons);
-    try { localStorage.setItem('gestup_v2_honorarios', JSON.stringify(newHons)); } catch {}
+    persistStateKey('gestup_v2_honorarios', newHons);
   };
 
   const saveContasBancarias = (newContas: ContaBancaria[]) => {
     setContasBancarias(newContas);
-    try { localStorage.setItem('gestup_v2_contas_bancarias', JSON.stringify(newContas)); } catch {}
+    persistStateKey('gestup_v2_contas_bancarias', newContas);
   };
 
   const saveHistoricoAjustes = (newHist: HistoricoAjusteSaldo[]) => {
     setHistoricoAjustesSaldo(newHist);
-    try { localStorage.setItem('gestup_v2_historico_ajustes_saldo', JSON.stringify(newHist)); } catch {}
+    persistStateKey('gestup_v2_historico_ajustes_saldo', newHist);
   };
 
   const saveLeads = (newLeads: CRMLead[]) => {
     setLeads(newLeads);
-    try { localStorage.setItem('gestup_v2_leads', JSON.stringify(newLeads)); } catch {}
+    persistStateKey('gestup_v2_leads', newLeads);
   };
 
   const deleteContaPagar = (id: string) => {
@@ -1409,28 +1781,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setContasBancarias(initialContasBancarias);
     setHistoricoAjustesSaldo([]);
     setLeads(initialLeads);
-    try {
-      localStorage.setItem('gestup_v2_honorarios', JSON.stringify(initialHonorarios));
-      localStorage.setItem('gestup_v2_contas_pagar', JSON.stringify([]));
-      localStorage.setItem('gestup_v2_contas_receber', JSON.stringify([]));
-      localStorage.setItem('gestup_v2_contas_bancarias', JSON.stringify(initialContasBancarias));
-      localStorage.removeItem('gestup_v2_historico_ajustes_saldo');
-    } catch {}
+    persistStateKey('gestup_v2_honorarios', initialHonorarios);
+    persistStateKey('gestup_v2_contas_pagar', []);
+    persistStateKey('gestup_v2_contas_receber', []);
+    persistStateKey('gestup_v2_contas_bancarias', initialContasBancarias);
+    persistStateKey('gestup_v2_historico_ajustes_saldo', []);
+    persistStateKey('gestup_v2_leads', initialLeads);
   };
 
   const redefinirDadosPadrao = () => {
     try {
       localStorage.clear();
     } catch {}
-    setClientes(initialClientes.map(enrichCliente));
-    setTarefas(initialTarefas.map(enrichTarefa));
-    setDeclaracoes((initialDeclaracoes as Declaracao[]).map(enrichDeclaracao));
+    const clis = initialClientes.map(enrichCliente);
+    const tars = initialTarefas.map(enrichTarefa);
+    const decs = (initialDeclaracoes as Declaracao[]).map(enrichDeclaracao);
+    setClientes(clis);
+    setTarefas(tars);
+    setDeclaracoes(decs);
     setContasPagar([]);
     setContasReceber([]);
     setHonorarios(initialHonorarios);
     setContasBancarias(initialContasBancarias);
     setHistoricoAjustesSaldo([]);
     setLeads(initialLeads);
+    persistStateKey('gestup_v2_clientes', clis);
+    persistStateKey('gestup_v2_tarefas', tars);
+    persistStateKey('gestup_v2_declaracoes', decs);
+    persistStateKey('gestup_v2_contas_pagar', []);
+    persistStateKey('gestup_v2_contas_receber', []);
+    persistStateKey('gestup_v2_honorarios', initialHonorarios);
+    persistStateKey('gestup_v2_contas_bancarias', initialContasBancarias);
+    persistStateKey('gestup_v2_historico_ajustes_saldo', []);
+    persistStateKey('gestup_v2_leads', initialLeads);
   };
 
   // ================= TAREFAS =================
@@ -1443,7 +1826,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const tarefaEnriquecida = enrichTarefa(nova);
     setTarefas(prev => {
       const updated = [tarefaEnriquecida, ...prev];
-      try { localStorage.setItem('gestup_v2_tarefas', JSON.stringify(updated)); } catch {}
+      persistStateKey('gestup_v2_tarefas', updated);
       return updated;
     });
   };
@@ -1451,7 +1834,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateTarefa = (id: string, updates: Partial<Tarefa>) => {
     setTarefas(prev => {
       const updated = prev.map(t => t.id === id ? { ...t, ...updates } : t);
-      try { localStorage.setItem('gestup_v2_tarefas', JSON.stringify(updated)); } catch {}
+      persistStateKey('gestup_v2_tarefas', updated);
       return updated;
     });
   };
@@ -1459,7 +1842,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deleteTarefa = (id: string) => {
     setTarefas(prev => {
       const updated = prev.filter(t => t.id !== id);
-      try { localStorage.setItem('gestup_v2_tarefas', JSON.stringify(updated)); } catch {}
+      persistStateKey('gestup_v2_tarefas', updated);
       return updated;
     });
   };
@@ -1479,18 +1862,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setModelosMensagens(prev => {
       const existe = prev.some(m => m.id === modelo.id);
       const updated = existe ? prev.map(m => m.id === modelo.id ? modelo : m) : [...prev, modelo];
-      try {
-        localStorage.setItem('gestup_v2_modelos_mensagens', JSON.stringify(updated));
-      } catch {}
+      persistStateKey('gestup_v2_modelos_mensagens', updated);
       return updated;
     });
   };
 
   const restaurarModelosMensagensPadrao = () => {
     setModelosMensagens(initialModelosMensagens);
-    try {
-      localStorage.setItem('gestup_v2_modelos_mensagens', JSON.stringify(initialModelosMensagens));
-    } catch {}
+    persistStateKey('gestup_v2_modelos_mensagens', initialModelosMensagens);
   };
 
   const obterModeloMensagemParaTarefa = (tarefa: Tarefa): ModeloMensagemTarefa => {
@@ -2839,9 +3218,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         novaLista.push(tarefaRegistroSamiraPadrao);
         inseridas++;
       }
-      try {
-        localStorage.setItem('gestup_v2_tarefas', JSON.stringify(novaLista));
-      } catch {}
+      persistStateKey('gestup_v2_tarefas', novaLista);
       return novaLista;
     });
     return { totalRestauradas: inseridas };
@@ -3612,9 +3989,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updatedList = [novoLead, ...prevLeads];
       }
 
-      try {
-        localStorage.setItem('gestup_v2_leads', JSON.stringify(updatedList));
-      } catch {}
+      persistStateKey('gestup_v2_leads', updatedList);
 
       return updatedList;
     });
@@ -3706,9 +4081,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const existentesCnpjs = new Set(prev.map(e => e.cnpj.replace(/\D/g, '')));
           const filtradasNovas = novas.filter(n => !existentesCnpjs.has(n.cnpj.replace(/\D/g, '')));
           const atualizadas = [...filtradasNovas, ...prev];
-          try {
-            localStorage.setItem('gestup_v2_radar_fiscal', JSON.stringify(atualizadas));
-          } catch {}
+          persistStateKey('gestup_v2_radar_fiscal', atualizadas);
           return atualizadas;
         });
 
@@ -3783,9 +4156,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             return emp;
           });
 
-          try {
-            localStorage.setItem('gestup_v2_radar_fiscal', JSON.stringify(atualizadas));
-          } catch {}
+          persistStateKey('gestup_v2_radar_fiscal', atualizadas);
 
           return atualizadas;
         });
@@ -3918,9 +4289,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const atualizarWhatsAppConfig = (updates: Partial<WhatsAppConfig>) => {
     setWhatsAppConfig(prev => {
       const merged = { ...prev, ...updates };
-      try {
-        localStorage.setItem('gestup_v2_whatsapp_config', JSON.stringify(merged));
-      } catch {}
+      persistStateKey('gestup_v2_whatsapp_config', merged);
       return merged;
     });
   };
@@ -4473,9 +4842,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (novasTarefas.length > 0) {
       const tarefasAtualizadas = [...tarefas, ...novasTarefas];
       setTarefas(tarefasAtualizadas);
-      try {
-        localStorage.setItem('gestup_v2_tarefas', JSON.stringify(tarefasAtualizadas));
-      } catch {}
+      persistStateKey('gestup_v2_tarefas', tarefasAtualizadas);
     }
 
     return {
@@ -4620,11 +4987,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setDPFuncionarios([]);
     setDPControleVencimentos([]);
     setDPDiarioBordo([]);
-    try {
-      localStorage.setItem('gestup_v2_dp_funcionarios', JSON.stringify([]));
-      localStorage.setItem('gestup_v2_dp_controle_vencimentos', JSON.stringify([]));
-      localStorage.setItem('gestup_v2_dp_diario_bordo', JSON.stringify([]));
-    } catch {}
+    persistStateKey('gestup_v2_dp_funcionarios', []);
+    persistStateKey('gestup_v2_dp_controle_vencimentos', []);
+    persistStateKey('gestup_v2_dp_diario_bordo', []);
   };
 
   return (
@@ -4783,7 +5148,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteDPOcorrencia,
         sincronizarDPComTarefasGestup,
         promoverProcessoAdmissaoParaDP,
-        zerarDadosDP
+        zerarDadosDP,
+        syncStatus,
+        cloudConfigured,
+        lastSyncAt,
+        syncError,
+        sincronizarDaNuvem,
+        enviarTudoParaNuvem
       }}
     >
       {children}

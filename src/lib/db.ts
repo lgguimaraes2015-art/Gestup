@@ -72,6 +72,14 @@ export async function ensureGestupSchema(): Promise<void> {
       value JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS gestup_state_history (
+      id BIGSERIAL PRIMARY KEY,
+      key TEXT NOT NULL,
+      value JSONB NOT NULL,
+      saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_gestup_state_history_key_saved
+      ON gestup_state_history (key, saved_at DESC);
   `);
   globalForDb.__gestupSchemaReady = true;
 }

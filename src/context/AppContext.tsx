@@ -791,6 +791,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cloudConfiguredRef = useRef<boolean>(false);
   const isFlushingRef = useRef<boolean>(false);
+  const lastKeyTimestampsRef = useRef<Record<string, number>>({});
 
   const flushPendingCloudUpdates = useCallback(async (useKeepalive = false) => {
     const entries = Object.entries(pendingCloudUpdatesRef.current);
@@ -843,6 +844,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setCloudConfigured(true);
       setLastSyncAt(json.updatedAt || new Date().toISOString());
       setSyncError(null);
+      if (json.keyTimestamps && typeof json.keyTimestamps === 'object') {
+        for (const [k, iso] of Object.entries(json.keyTimestamps as Record<string, string>)) {
+          const ms = new Date(iso).getTime();
+          if (!isNaN(ms)) lastKeyTimestampsRef.current[k] = ms;
+        }
+      }
 
       // Se novas mudanças chegaram enquanto este batch estava enviando, dispara novo flush
       if (Object.keys(pendingCloudUpdatesRef.current).length > 0) {
@@ -1244,7 +1251,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             } catch {}
           }
 
-          applyCloudSnapshot(cloudData);
+          const cloudKeyTs = (json.keyTimestamps && typeof json.keyTimestamps === 'object')
+            ? (json.keyTimestamps as Record<string, string>)
+            : {};
+
+          if (silencioso && jaPareado && Object.keys(cloudKeyTs).length > 0) {
+            // No polling em tempo real (5s), aplica somente chaves realmente mais novas na nuvem
+            const changedOnly: Record<string, unknown> = {};
+            for (const [k, val] of Object.entries(cloudData)) {
+              const tsMs = cloudKeyTs[k] ? new Date(cloudKeyTs[k]).getTime() : 0;
+              const prevMs = lastKeyTimestampsRef.current[k] || 0;
+              if (tsMs > prevMs && !(k in pendingCloudUpdatesRef.current)) {
+                changedOnly[k] = val;
+                lastKeyTimestampsRef.current[k] = tsMs;
+              }
+            }
+            if (Object.keys(changedOnly).length > 0) {
+              applyCloudSnapshot(changedOnly);
+            }
+          } else {
+            applyCloudSnapshot(cloudData);
+            for (const [k, iso] of Object.entries(cloudKeyTs)) {
+              const ms = new Date(iso).getTime();
+              if (!isNaN(ms)) lastKeyTimestampsRef.current[k] = ms;
+            }
+          }
 
           // Se este aparelho tinha baixas locais preservadas no merge, sobe imediatamente para a nuvem!
           if (Object.keys(updatesMesclados).length > 0) {
@@ -1255,6 +1286,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 body: JSON.stringify({ updates: updatesMesclados })
               });
               const pushJson = await pushRes.json().catch(() => ({}));
+              if (pushJson?.keyTimestamps && typeof pushJson.keyTimestamps === 'object') {
+                for (const [k, iso] of Object.entries(pushJson.keyTimestamps as Record<string, string>)) {
+                  const ms = new Date(iso).getTime();
+                  if (!isNaN(ms)) lastKeyTimestampsRef.current[k] = ms;
+                }
+              }
               setLastSyncAt(pushJson?.updatedAt || new Date().toISOString());
               setSyncStatus('synced');
               return {
@@ -1288,11 +1325,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applyCloudSnapshot, enviarTudoParaNuvem]);
 
-  // Boot da nuvem + sincronização automática ao voltar para o app (Celular <-> PC) + flush antes de fechar
+  // Boot da nuvem + sincronização em tempo real (a cada 5s) + volta de aba + flush antes de fechar
   useEffect(() => {
     const bootTimer = setTimeout(() => {
       sincronizarDaNuvem(false);
     }, 150);
+
+    const realtimePoll = setInterval(() => {
+      if (
+        document.visibilityState === 'visible' &&
+        cloudConfiguredRef.current &&
+        Object.keys(pendingCloudUpdatesRef.current).length === 0 &&
+        !isFlushingRef.current
+      ) {
+        sincronizarDaNuvem(true);
+      }
+    }, 5000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
@@ -1328,6 +1376,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       clearTimeout(bootTimer);
+      clearInterval(realtimePoll);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('online', handleOnline);

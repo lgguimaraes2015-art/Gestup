@@ -1045,8 +1045,25 @@ export function FinanceiroView() {
                 <tbody className="divide-y divide-slate-100">
                   {honorariosFiltrados.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-5 py-8 text-center text-slate-400">
-                        Nenhum honorário encontrado para a competência {competenciaSelecionada}.
+                      <td colSpan={7} className="px-5 py-10 text-center">
+                        <p className="text-sm font-semibold text-slate-600">
+                          Nenhum honorário encontrado para a competência {competenciaSelecionada}.
+                        </p>
+                        {honorariosDaCompetencia.length === 0 && (
+                          <div className="mt-3 flex flex-col items-center gap-2">
+                            <p className="text-xs text-slate-500">
+                              Clique abaixo para gerar os honorários de todos os clientes ativos para {competenciaSelecionada} e salvar automaticamente na nuvem.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={handleSincronizarCarteira}
+                              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-blue hover:bg-brand-blue-hover text-white text-xs font-bold shadow-sm transition-all"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>Gerar Honorários de {competenciaSelecionada} agora</span>
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ) : (
